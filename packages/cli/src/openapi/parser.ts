@@ -23,6 +23,10 @@ export function parseSpecText(text: string, url?: string, name?: string): Parsed
   const servers = (doc.servers as Array<{ url: string }>) ?? [];
 
   let baseUrl = servers[0]?.url ?? '';
+  // Fall back to spec source origin when servers[] is empty (common with NestJS swagger)
+  if (!baseUrl && url) {
+    try { baseUrl = new URL(url).origin; } catch { /* keep */ }
+  }
   // Resolve relative server URLs (e.g. "/api/v1") against the spec source URL
   if (baseUrl && !baseUrl.startsWith('http') && url) {
     try { baseUrl = new URL(baseUrl, url).href.replace(/\/$/, ''); } catch { /* keep */ }

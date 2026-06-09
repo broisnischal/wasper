@@ -14,5 +14,8 @@
   },
   "devDependencies": {
     "typescript": "^5"
+  },
+  "dependencies": {
+    "@tanstack/react-hotkeys": "^0.10.0"
   }
 }

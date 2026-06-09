@@ -111,18 +111,11 @@ export function CommandPalette({ open, onClose, operations, onSelect }: Props) {
               onClick={() => pick(op)}
             >
               <span className={`method-badge method-${op.method.toUpperCase()}`}>{op.method.toUpperCase()}</span>
-              <span style={{ flex: 1, overflow: 'hidden' }}>
-                <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text)' }}>
-                  {op.path}
-                </div>
-                {op.summary && (
-                  <div style={{ fontSize: 11, color: 'var(--text-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {op.summary}
-                  </div>
-                )}
+              <span style={{ flex: 1, fontFamily: 'GeistMono, monospace', fontSize: 12.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--foreground)' }}>
+                {op.path}
               </span>
               {op.tags[0] && (
-                <span style={{ fontSize: 10, color: 'var(--text-3)', background: 'var(--bg-subtle)', borderRadius: 4, padding: '1px 6px', flexShrink: 0 }}>
+                <span style={{ fontSize: 10, color: 'var(--placeholder-foreground)', background: 'var(--elevated)', borderRadius: 4, padding: '1px 7px', flexShrink: 0 }}>
                   {op.tags[0]}
                 </span>
               )}

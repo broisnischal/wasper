@@ -16,8 +16,8 @@ function getHighlighter() {
   return highlighterPromise;
 }
 
-// Pre-warm on first module load
-getHighlighter();
+// Pre-warm on client only
+if (typeof window !== 'undefined') getHighlighter();
 
 interface Props {
   text: string;

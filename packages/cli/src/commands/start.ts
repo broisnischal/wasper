@@ -45,9 +45,9 @@ export async function run(overrideOpts?: StartOptions) {
     // Give the child a moment to start, then check it's alive
     await Bun.sleep(600);
     await writeDaemonState({ pid, port: PORT, specUrl, startedAt: Date.now() });
-    console.log(`\n  ${paint.green('✓')}  ${paint.bold('OpenAPI Agent')} started in background`);
-    console.log(`     ${paint.dim(`PID ${pid}  ·  http://localhost:${PORT}/`)}\n`);
-    console.log(`     ${paint.dim('openapi-agent status')} to check · ${paint.dim('openapi-agent stop')} to stop\n`);
+    console.log(`\n  ${paint.green('✓')}  Started in background  ${paint.dim('PID ' + pid)}`);
+    console.log(`  ${paint.dim('➜')}  ${paint.cyan(`http://localhost:${PORT}/`)}`);
+    console.log(`\n  ${paint.dim('openapi-agent status')}  ${paint.dim('·')}  ${paint.dim('openapi-agent stop')}\n`);
     process.exit(0);
   }
 
@@ -64,13 +64,13 @@ export async function run(overrideOpts?: StartOptions) {
       specTitle     = state.spec.title;
       specVersion   = state.spec.version;
       endpointCount = state.operations.length;
-      spinner.stop('✓', `${paint.bold(specTitle)} v${specVersion} · ${paint.green(String(endpointCount) + ' endpoints')}`, 'green');
+      spinner.stop(); // banner will display spec info
     } catch (e) {
       spinner.stop('✗', `Failed to load spec: ${e instanceof Error ? e.message : String(e)}`, 'red');
       // continue without spec
     }
   } else if (!isDaemon) {
-    console.log(`\n  ${paint.yellow('○')}  No spec — upload via Studio or start with ${paint.bold('--url <url>')}\n`);
+    // no-op — banner handles the "no spec" message
   }
 
   // ── Inject runtime env (for /api/server-info) ─────────────────────────────
@@ -87,7 +87,7 @@ export async function run(overrideOpts?: StartOptions) {
 
     async fetch(req, srv) {
       const { pathname } = new URL(req.url);
-      if (pathname === '/logs') return logsUpgradeHandler(req, srv) ?? new Response('Upgraded', { status: 101 });
+      if (pathname === '/logs') return logsUpgradeHandler(req, srv);
       if (pathname === '/mcp') return mcpHandler(req);
       if (pathname === '/openapi.json') {
         if (!hasState()) return new Response('No spec loaded', { status: 404 });
@@ -121,7 +121,7 @@ export async function run(overrideOpts?: StartOptions) {
 
   // ── Graceful shutdown ─────────────────────────────────────────────────────
   function shutdown(sig?: string) {
-    if (sig && !isDaemon) console.log(`\n  ${paint.dim(`Shutting down… (${sig})`)}\n`);
+    if (sig && !isDaemon) process.stdout.write(`\n  ${paint.dim('shutting down')}\n\n`);
     clearDaemonState().finally(() => {
       db.close();
       server.stop();
@@ -166,10 +166,10 @@ function attachKeyboard(opts: { specUrl: string | null; PORT: number; server: Re
           return;
         }
         isReloading = true;
-        spinner.start(`Hot-reloading ${paint.cyan(specUrl)}`);
+        spinner.start(`Reloading spec…`);
         try {
           const state = await loadSpec(specUrl);
-          spinner.stop('✓', `${paint.bold(state.spec.title)} v${state.spec.version} · ${paint.green(String(state.operations.length) + ' endpoints')}`, 'green');
+          spinner.stop('✓', `${paint.bold(state.spec.title)}  ${paint.dim('v' + state.spec.version)}  ${paint.dim('·')}  ${paint.green(state.operations.length + ' endpoints')}`, 'green');
         } catch (e) {
           spinner.stop('✗', `Reload failed: ${e instanceof Error ? e.message : String(e)}`, 'red');
         } finally {
@@ -183,10 +183,8 @@ function attachKeyboard(opts: { specUrl: string | null; PORT: number; server: Re
         process.stdin.setRawMode(false);
         process.stdin.pause();
         process.on('SIGHUP', () => {}); // survive terminal close
-        console.log(`\n  ${paint.green('✓')}  Running in background  ${paint.dim(`(PID ${process.pid})`)}`);
-        console.log(`     ${paint.dim('openapi-agent status')} · ${paint.dim('openapi-agent stop')}`);
-        console.log(`     Logs: ${paint.dim(`~/.openapi-agent/server.log`)}\n`);
-        // redirect stdout/stderr to log file
+        console.log(`\n  ${paint.green('✓')}  Detached  ${paint.dim(`PID ${process.pid}`)}`);
+        console.log(`  ${paint.dim('➜')}  ${paint.dim('openapi-agent status')}  ${paint.dim('·')}  ${paint.dim('openapi-agent stop')}\n`);
         break;
       }
 

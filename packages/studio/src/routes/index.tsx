@@ -2,6 +2,7 @@ import { createFileRoute, Link } from '@tanstack/react-router';
 import { useEffect, useRef, useState } from 'react';
 import { apiClient, CLI_BASE_URL } from '../lib/api';
 import { cacheInvalidateSpec } from '../lib/cache';
+import { cn } from '../lib/utils';
 import {
   RefreshCw, Copy, Check, ExternalLink,
   Zap, GitBranch, Server, Globe, ArrowUpRight,
@@ -17,7 +18,6 @@ interface Status {
   endpointCount: number;
   wsClients: number;
 }
-
 interface LogEntry {
   id: string; method: string; url: string;
   status_code: number | null; latency_ms: number | null;
@@ -45,38 +45,32 @@ function trunc(url: string, n = 50) {
   return url.length > n ? url.slice(0, n) + '…' : url;
 }
 
-function statusBadge(code: number | null, error: string | null) {
+function StatusBadge({ code, error }: { code: number | null; error: string | null }) {
   if (error) return (
-    <span className="status-badge status-badge-error">
-      <AlertCircle size={11} />
-      Error
+    <span className="status-badge status-badge-error gap-1">
+      <AlertCircle size={11} />Error
     </span>
   );
   if (!code) return null;
   if (code < 300) return (
-    <span className="status-badge status-badge-success">
-      <CheckCircle size={11} />
-      {code}
+    <span className="status-badge status-badge-success gap-1">
+      <CheckCircle size={11} />{code}
     </span>
   );
   if (code < 500) return (
-    <span className="status-badge status-badge-pending">
-      <Clock size={11} />
-      {code}
+    <span className="status-badge status-badge-pending gap-1">
+      <Clock size={11} />{code}
     </span>
   );
   return (
-    <span className="status-badge status-badge-error">
-      <AlertCircle size={11} />
-      {code}
+    <span className="status-badge status-badge-error gap-1">
+      <AlertCircle size={11} />{code}
     </span>
   );
 }
 
-// ─── Spec Loader ─────────────────────────────────────────────────────────────
-
+// ─── Spec Loader ──────────────────────────────────────────────────────────────
 type LoadState = 'idle' | 'loading' | 'success' | 'error';
-
 interface LoadResult { spec?: { title: string; version: string; baseUrl: string }; endpointCount?: number; error?: string; }
 
 function SpecLoader({ onLoaded }: { onLoaded: () => void }) {
@@ -89,8 +83,7 @@ function SpecLoader({ onLoaded }: { onLoaded: () => void }) {
   const fileRef = useRef<HTMLInputElement>(null);
 
   const doUpload = async (f: File) => {
-    setState('loading');
-    setResult(null);
+    setState('loading'); setResult(null);
     try {
       const content = await f.text();
       const r = await apiClient<LoadResult>('/api/spec/upload', {
@@ -98,8 +91,7 @@ function SpecLoader({ onLoaded }: { onLoaded: () => void }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content, filename: f.name }),
       });
-      setResult(r);
-      setState('success');
+      setResult(r); setState('success');
       await cacheInvalidateSpec();
       setTimeout(() => onLoaded(), 600);
     } catch (e) {
@@ -110,16 +102,14 @@ function SpecLoader({ onLoaded }: { onLoaded: () => void }) {
 
   const doLoadUrl = async () => {
     if (!url.trim()) return;
-    setState('loading');
-    setResult(null);
+    setState('loading'); setResult(null);
     try {
       const r = await apiClient<LoadResult>('/api/spec/reload-url', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: url.trim() }),
       });
-      setResult(r);
-      setState('success');
+      setResult(r); setState('success');
       await cacheInvalidateSpec();
       setTimeout(() => onLoaded(), 600);
     } catch (e) {
@@ -129,105 +119,78 @@ function SpecLoader({ onLoaded }: { onLoaded: () => void }) {
   };
 
   const onDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setDrag(false);
+    e.preventDefault(); setDrag(false);
     const f = e.dataTransfer.files[0];
     if (f) { setFile(f); doUpload(f); }
   };
 
-  const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (f) { setFile(f); doUpload(f); }
-  };
-
-  const tabStyle = (t: 'file' | 'url'): React.CSSProperties => ({
-    flex: 1, padding: '7px 0', fontSize: 13, fontWeight: 500,
-    background: tab === t ? 'var(--background)' : 'none',
-    border: 'none', borderRadius: tab === t ? 6 : 0,
-    color: tab === t ? 'var(--foreground)' : 'var(--muted-foreground)',
-    cursor: 'pointer', fontFamily: 'inherit',
-    boxShadow: tab === t ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
-    transition: 'all 0.12s',
-  });
-
   return (
-    <div style={{
-      background: 'var(--card)', border: '1px solid var(--border)',
-      borderRadius: 10, overflow: 'hidden',
-    }}>
-      {/* Header */}
-      <div style={{ padding: '14px 18px 12px', borderBottom: '1px solid var(--border)' }}>
-        <div style={{ fontWeight: 600, fontSize: 13.5 }}>Load Spec</div>
-        <div style={{ fontSize: 12, color: 'var(--muted-foreground)', marginTop: 2 }}>
+    <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl overflow-hidden">
+      <div className="px-5 py-4 border-b border-[var(--border)]">
+        <div className="text-[14px] font-semibold text-[var(--foreground)]">Load Spec</div>
+        <div className="text-[12.5px] text-[var(--muted-foreground)] mt-0.5">
           Upload a YAML or JSON OpenAPI spec, or load from a URL
         </div>
       </div>
 
-      <div style={{ padding: '14px 18px' }}>
+      <div className="p-5">
         {/* Tab switcher */}
-        <div style={{
-          display: 'flex', background: 'var(--elevated)', borderRadius: 8,
-          padding: 3, marginBottom: 14,
-        }}>
-          <button style={tabStyle('file')} onClick={() => setTab('file')}>
-            <FileCode2 size={12} style={{ marginRight: 6, verticalAlign: -2 }} />
-            Upload File
-          </button>
-          <button style={tabStyle('url')} onClick={() => setTab('url')}>
-            <Link2 size={12} style={{ marginRight: 6, verticalAlign: -2 }} />
-            From URL
-          </button>
+        <div className="flex bg-[var(--elevated)] rounded-lg p-1 mb-4 gap-0.5">
+          {(['file', 'url'] as const).map(t => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={cn(
+                'flex-1 flex items-center justify-center gap-1.5 py-1.5 text-[13px] font-medium rounded-md transition-all duration-100 border-0 cursor-pointer font-sans',
+                tab === t
+                  ? 'bg-[var(--background)] text-[var(--foreground)] shadow-sm'
+                  : 'bg-transparent text-[var(--muted-foreground)] hover:text-[var(--foreground-secondary)]',
+              )}
+            >
+              {t === 'file' ? <FileCode2 size={12} /> : <Link2 size={12} />}
+              {t === 'file' ? 'Upload File' : 'From URL'}
+            </button>
+          ))}
         </div>
 
         {tab === 'file' && (
           <>
             <input
-              ref={fileRef} type="file"
-              accept=".yaml,.yml,.json"
-              style={{ display: 'none' }}
-              onChange={onFileChange}
+              ref={fileRef} type="file" accept=".yaml,.yml,.json"
+              className="hidden"
+              onChange={e => { const f = e.target.files?.[0]; if (f) { setFile(f); doUpload(f); } }}
             />
             <div
               onDragOver={e => { e.preventDefault(); setDrag(true); }}
               onDragLeave={() => setDrag(false)}
               onDrop={onDrop}
               onClick={() => fileRef.current?.click()}
-              style={{
-                border: `2px dashed ${drag ? 'var(--accent)' : 'var(--border)'}`,
-                borderRadius: 8, padding: '28px 20px',
-                textAlign: 'center', cursor: 'pointer',
-                background: drag ? 'var(--accent-dim)' : 'transparent',
-                transition: 'all 0.15s',
-              }}
+              className={cn(
+                'border-2 border-dashed rounded-lg px-5 py-8 text-center cursor-pointer transition-all duration-150',
+                drag
+                  ? 'border-[var(--accent)] bg-[var(--accent-dim)]'
+                  : 'border-[var(--border)] hover:border-[var(--border-hover)]',
+              )}
             >
               {state === 'loading' ? (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+                <div className="flex flex-col items-center gap-2">
                   <span className="spinner" style={{ width: 20, height: 20, borderWidth: 2 }} />
-                  <span style={{ fontSize: 13, color: 'var(--muted-foreground)' }}>Parsing spec…</span>
+                  <span className="text-[13px] text-[var(--muted-foreground)]">Parsing spec…</span>
                 </div>
               ) : (
                 <>
-                  <div style={{
-                    width: 36, height: 36, borderRadius: 9,
-                    background: 'color-mix(in srgb, var(--foreground) 7%, transparent)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    margin: '0 auto 10px',
-                  }}>
-                    <Upload size={16} style={{ color: 'var(--muted-foreground)' }} />
+                  <div className="w-9 h-9 rounded-lg bg-[color-mix(in_srgb,var(--foreground)_7%,transparent)] flex items-center justify-center mx-auto mb-3">
+                    <Upload size={16} className="text-[var(--muted-foreground)]" />
                   </div>
                   {file && state !== 'error' ? (
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
-                      <FileJson size={14} style={{ color: 'var(--accent)' }} />
-                      <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--foreground)' }}>{file.name}</span>
+                    <div className="flex items-center justify-center gap-2">
+                      <FileJson size={14} className="text-[var(--accent)]" />
+                      <span className="text-[13px] font-medium text-[var(--foreground)]">{file.name}</span>
                     </div>
                   ) : (
                     <>
-                      <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--foreground)', marginBottom: 4 }}>
-                        Drop your spec file here
-                      </div>
-                      <div style={{ fontSize: 12, color: 'var(--muted-foreground)' }}>
-                        or click to browse · .yaml, .yml, .json
-                      </div>
+                      <div className="text-[13.5px] font-medium text-[var(--foreground)] mb-1">Drop your spec file here</div>
+                      <div className="text-[12px] text-[var(--muted-foreground)]">or click to browse · .yaml, .yml, .json</div>
                     </>
                   )}
                 </>
@@ -237,20 +200,18 @@ function SpecLoader({ onLoaded }: { onLoaded: () => void }) {
         )}
 
         {tab === 'url' && (
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div className="flex gap-2">
             <input
-              className="input"
+              className="input flex-1 h-9 font-mono text-[12.5px]"
               placeholder="https://api.example.com/openapi.yaml"
               value={url}
               onChange={e => setUrl(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && doLoadUrl()}
-              style={{ flex: 1, fontFamily: 'GeistMono, monospace', fontSize: 12.5 }}
             />
             <button
-              className="btn btn-primary"
+              className="btn btn-primary h-9 flex-shrink-0 gap-1.5"
               onClick={doLoadUrl}
               disabled={!url.trim() || state === 'loading'}
-              style={{ gap: 6, flexShrink: 0 }}
             >
               {state === 'loading'
                 ? <span className="spinner" style={{ width: 12, height: 12 }} />
@@ -260,19 +221,12 @@ function SpecLoader({ onLoaded }: { onLoaded: () => void }) {
           </div>
         )}
 
-        {/* Feedback */}
         {state === 'success' && result?.spec && (
-          <div style={{
-            marginTop: 10, padding: '8px 12px', borderRadius: 7,
-            background: 'var(--accent-dim)', border: '1px solid rgba(34,197,94,0.25)',
-            display: 'flex', alignItems: 'center', gap: 8,
-          }}>
-            <CheckCircle size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--foreground)' }}>
-                {result.spec.title}
-              </span>
-              <span style={{ fontSize: 12, color: 'var(--muted-foreground)', marginLeft: 8 }}>
+          <div className="mt-3 px-3 py-2.5 rounded-lg bg-[var(--accent-dim)] border border-[rgba(34,197,94,0.25)] flex items-center gap-2.5">
+            <CheckCircle size={14} className="text-[var(--accent)] flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <span className="text-[13px] font-medium text-[var(--foreground)]">{result.spec.title}</span>
+              <span className="text-[12px] text-[var(--muted-foreground)] ml-2">
                 v{result.spec.version} · {result.endpointCount} endpoints
               </span>
             </div>
@@ -280,13 +234,9 @@ function SpecLoader({ onLoaded }: { onLoaded: () => void }) {
         )}
 
         {state === 'error' && result?.error && (
-          <div style={{
-            marginTop: 10, padding: '8px 12px', borderRadius: 7,
-            background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.25)',
-            display: 'flex', alignItems: 'flex-start', gap: 8,
-          }}>
-            <X size={14} style={{ color: '#ef4444', flexShrink: 0, marginTop: 1 }} />
-            <span style={{ fontSize: 12, color: '#ef4444', wordBreak: 'break-word' }}>{result.error}</span>
+          <div className="mt-3 px-3 py-2.5 rounded-lg bg-[var(--error-dim)] border border-[rgba(239,68,68,0.25)] flex items-start gap-2.5">
+            <X size={14} className="text-[var(--destructive)] flex-shrink-0 mt-0.5" />
+            <span className="text-[12px] text-[var(--destructive)] break-words">{result.error}</span>
           </div>
         )}
       </div>
@@ -294,8 +244,7 @@ function SpecLoader({ onLoaded }: { onLoaded: () => void }) {
   );
 }
 
-// ─── Overview page ────────────────────────────────────────────────────────────
-
+// ─── Overview page ─────────────────────────────────────────────────────────────
 export function OverviewPage() {
   const [status, setStatus] = useState<Status | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -332,57 +281,32 @@ export function OverviewPage() {
   };
 
   return (
-    <div style={{ flex: 1, overflow: 'auto', background: 'var(--background)' }}>
+    <div className="flex-1 overflow-auto bg-[var(--background)]">
 
       {/* ── Page header */}
-      <div style={{
-        padding: '28px 32px 22px',
-        display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
-      }}>
+      <div className="flex items-start justify-between px-8 pt-7 pb-6">
         <div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, letterSpacing: -0.4, color: 'var(--foreground)' }}>
+          <h1 className="text-[22px] font-bold tracking-tight text-[var(--foreground)]">
             {greeting()}{status?.spec ? `, ${status.spec.title}` : ''}
           </h1>
-          <p style={{ fontSize: 13, color: 'var(--muted-foreground)', marginTop: 4 }}>
+          <p className="text-[13px] text-[var(--muted-foreground)] mt-1">
             {status?.spec ? 'API development studio' : 'Welcome — load a spec to get started'}
           </p>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 2 }}>
+        <div className="flex items-center gap-2 mt-0.5">
           <button
             onClick={load}
             disabled={refreshing}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-              padding: '6px 12px', borderRadius: 6, fontSize: 13,
-              background: 'transparent', border: '1px solid var(--border)',
-              color: 'var(--muted-foreground)', cursor: 'pointer',
-              transition: 'all 0.1s', fontFamily: 'inherit',
-            }}
-            onMouseEnter={e => {
-              (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border-hover)';
-              (e.currentTarget as HTMLButtonElement).style.color = 'var(--foreground)';
-            }}
-            onMouseLeave={e => {
-              (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border)';
-              (e.currentTarget as HTMLButtonElement).style.color = 'var(--muted-foreground)';
-            }}
+            className="btn btn-ghost gap-1.5 text-[13px]"
           >
-            <RefreshCw size={13} style={{ animation: refreshing ? 'spin 0.6s linear infinite' : 'none' }} />
+            <RefreshCw size={13} className={cn(refreshing && 'animate-spin')} />
             Refresh
           </button>
           <a
             href={`${CLI_BASE_URL}/openapi.json`}
             target="_blank"
             rel="noopener noreferrer"
-            style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-              padding: '6px 12px', borderRadius: 6, fontSize: 13,
-              background: 'var(--accent)', color: '#000',
-              fontWeight: 500, cursor: 'pointer', textDecoration: 'none',
-              transition: 'opacity 0.1s',
-            }}
-            onMouseEnter={e => (e.currentTarget as HTMLAnchorElement).style.opacity = '0.88'}
-            onMouseLeave={e => (e.currentTarget as HTMLAnchorElement).style.opacity = '1'}
+            className="btn btn-primary gap-1.5 text-[13px] no-underline"
           >
             <Globe size={13} />
             View Spec
@@ -391,65 +315,41 @@ export function OverviewPage() {
         </div>
       </div>
 
-      {/* ── Main info area */}
-      <div style={{ padding: '0 32px', display: 'grid', gridTemplateColumns: '1fr 340px', gap: 20, marginBottom: 32 }}>
+      {/* ── Main grid */}
+      <div className="px-8 grid grid-cols-[1fr_320px] gap-5 mb-8">
 
-        {/* Left: MCP card (when spec loaded) or SpecLoader (no spec) */}
+        {/* Left: MCP card or SpecLoader */}
         {specLoaded ? (
-          <div style={{
-            background: 'var(--card)', border: '1px solid var(--border)',
-            borderRadius: 10, overflow: 'hidden', minHeight: 260,
-            display: 'flex', flexDirection: 'column',
-          }}>
+          <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl overflow-hidden flex flex-col min-h-[240px]">
             {/* Card header */}
-            <div style={{
-              padding: '16px 18px', borderBottom: '1px solid var(--border)',
-              background: 'var(--sidebar)', display: 'flex', alignItems: 'center', gap: 8,
-            }}>
-              <div style={{
-                width: 22, height: 22, borderRadius: 5, flexShrink: 0,
-                background: 'var(--elevated)', border: '1px solid var(--border)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>
-                <Zap size={11} style={{ color: 'var(--muted-foreground)' }} strokeWidth={2} />
+            <div className="flex items-center gap-2.5 px-5 py-4 border-b border-[var(--border)] bg-[var(--sidebar)]">
+              <div className="w-6 h-6 rounded-md flex-shrink-0 bg-[var(--elevated)] border border-[var(--border)] flex items-center justify-center">
+                <Zap size={12} className="text-[var(--muted-foreground)]" strokeWidth={2} />
               </div>
-              <span style={{ fontWeight: 600, fontSize: 13.5 }}>
+              <span className="text-[14px] font-semibold text-[var(--foreground)] tracking-tight">
                 {status?.spec.title ?? 'No API loaded'}
               </span>
-              <span style={{
-                marginLeft: 6, fontSize: 11, fontWeight: 500,
-                background: 'var(--accent-dim)', color: 'var(--accent)',
-                border: '1px solid rgba(34,197,94,0.2)',
-                borderRadius: 20, padding: '2px 8px', display: 'flex', alignItems: 'center', gap: 4,
-              }}>
-                <span className="dot" style={{ background: 'var(--accent)', width: 5, height: 5 }} />
+              <span className="ml-1 flex items-center gap-1 text-[11px] font-medium bg-[var(--accent-dim)] text-[var(--accent)] border border-[rgba(34,197,94,0.2)] rounded-full px-2.5 py-0.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] inline-block" />
                 Live
               </span>
             </div>
 
             {/* MCP config */}
-            <div style={{ padding: '16px 18px', flex: 1 }}>
-              <div style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--muted-foreground)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            <div className="p-5 flex-1">
+              <div className="text-[11px] font-semibold text-[var(--muted-foreground)] tracking-widest uppercase mb-2.5">
                 MCP Configuration
               </div>
-              <div style={{ position: 'relative', background: 'var(--elevated)', border: '1px solid var(--border)', borderRadius: 6, overflow: 'hidden' }}>
-                <pre style={{
-                  margin: 0, padding: '10px 40px 10px 12px',
-                  fontSize: 11.5, fontFamily: 'GeistMono, ui-monospace, monospace',
-                  color: 'var(--muted-foreground)', overflow: 'auto', lineHeight: 1.65,
-                }}>
+              <div className="relative bg-[var(--elevated)] border border-[var(--border)] rounded-lg overflow-hidden">
+                <pre className="m-0 px-3 pt-3 pb-3 pr-14 text-[11.5px] font-mono text-[var(--muted-foreground)] overflow-auto leading-relaxed">
                   {mcpConfig}
                 </pre>
                 <button
                   onClick={copy}
-                  style={{
-                    position: 'absolute', top: 7, right: 7,
-                    background: 'var(--card)', border: '1px solid var(--border)',
-                    borderRadius: 4, padding: '3px 7px',
-                    color: copied ? 'var(--accent)' : 'var(--muted-foreground)',
-                    display: 'flex', alignItems: 'center', gap: 4, fontSize: 11,
-                    fontFamily: 'inherit', cursor: 'pointer', transition: 'color 0.12s',
-                  }}
+                  className={cn(
+                    'absolute top-2 right-2 flex items-center gap-1 px-2 py-1 rounded text-[11px] bg-[var(--card)] border border-[var(--border)] cursor-pointer font-sans transition-colors',
+                    copied ? 'text-[var(--accent)]' : 'text-[var(--muted-foreground)] hover:text-[var(--foreground)]',
+                  )}
                 >
                   {copied ? <Check size={11} /> : <Copy size={11} />}
                   {copied ? 'Copied' : 'Copy'}
@@ -458,64 +358,55 @@ export function OverviewPage() {
             </div>
           </div>
         ) : (
-          /* No spec — show spec loader in left column */
           <SpecLoader onLoaded={load} />
         )}
 
-        {/* Right: info panel always rendered — shows status when spec loaded, getting started otherwise */}
-        <div style={{
-          background: 'var(--card)', border: '1px solid var(--border)',
-          borderRadius: 10, padding: '20px 20px',
-        }}>
+        {/* Right: status or getting started */}
+        <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-5">
           {specLoaded ? (
             <>
-              <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--muted-foreground)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 16 }}>
+              <div className="text-[11px] font-semibold text-[var(--muted-foreground)] tracking-widest uppercase mb-4">
                 Status
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                <div className="info-row">
-                  <Server size={14} style={{ flexShrink: 0 }} />
+              <div className="flex flex-col gap-4">
+                <div className="flex items-start gap-3 text-[var(--muted-foreground)]">
+                  <Server size={14} className="flex-shrink-0 mt-0.5" />
                   <div>
-                    <div style={{ fontSize: 11, color: 'var(--muted-foreground)', marginBottom: 2 }}>Server</div>
-                    <div style={{ fontSize: 13, color: 'var(--foreground)', fontFamily: 'GeistMono, monospace', wordBreak: 'break-all' }}>
-                      {status?.spec.baseUrl || status?.spec.url || <span style={{ color: 'var(--placeholder-foreground)' }}>Not loaded</span>}
+                    <div className="text-[11px] text-[var(--muted-foreground)] mb-1">Server</div>
+                    <div className="text-[13px] text-[var(--foreground)] font-mono break-all">
+                      {status?.spec.baseUrl || status?.spec.url || (
+                        <span className="text-[var(--placeholder-foreground)]">Not loaded</span>
+                      )}
                     </div>
                   </div>
                 </div>
 
-                <div className="info-row">
-                  <Zap size={14} style={{ flexShrink: 0 }} />
+                <div className="flex items-start gap-3 text-[var(--muted-foreground)]">
+                  <Zap size={14} className="flex-shrink-0 mt-1" />
                   <div>
-                    <div style={{ fontSize: 11, color: 'var(--muted-foreground)', marginBottom: 2 }}>Endpoints</div>
-                    <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: -0.5, color: 'var(--foreground)' }}>
+                    <div className="text-[11px] text-[var(--muted-foreground)] mb-1">Endpoints</div>
+                    <div className="text-[26px] font-bold tracking-tight text-[var(--foreground)] leading-none">
                       {status?.endpointCount ?? '—'}
                     </div>
                   </div>
                 </div>
 
-                <div className="info-row">
-                  <GitBranch size={14} style={{ flexShrink: 0 }} />
+                <div className="flex items-start gap-3 text-[var(--muted-foreground)]">
+                  <GitBranch size={14} className="flex-shrink-0 mt-0.5" />
                   <div>
-                    <div style={{ fontSize: 11, color: 'var(--muted-foreground)', marginBottom: 2 }}>Version</div>
-                    <div style={{ fontSize: 13, color: 'var(--foreground)' }}>
+                    <div className="text-[11px] text-[var(--muted-foreground)] mb-1">Version</div>
+                    <div className="text-[13px] text-[var(--foreground)]">
                       {status ? `v${status.spec.version}` : '—'}
                     </div>
                   </div>
                 </div>
               </div>
 
-              <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div className="mt-5 pt-4 border-t border-[var(--border)] flex flex-col gap-2">
                 <Link
                   to="/explorer"
-                  style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    padding: '8px 12px', borderRadius: 6, fontSize: 13, fontWeight: 500,
-                    background: 'var(--accent)', color: '#000',
-                    textDecoration: 'none', transition: 'opacity 0.1s',
-                  }}
-                  onMouseEnter={e => (e.currentTarget as HTMLAnchorElement).style.opacity = '0.88'}
-                  onMouseLeave={e => (e.currentTarget as HTMLAnchorElement).style.opacity = '1'}
+                  className="flex items-center justify-between px-3 py-2 rounded-lg text-[13px] font-medium bg-[var(--accent)] text-black no-underline hover:opacity-90 transition-opacity"
                 >
                   Open Explorer
                   <ArrowUpRight size={14} />
@@ -524,21 +415,7 @@ export function OverviewPage() {
                   href={mcpUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    padding: '8px 12px', borderRadius: 6, fontSize: 13, fontWeight: 500,
-                    background: 'transparent', border: '1px solid var(--border)',
-                    color: 'var(--muted-foreground)', textDecoration: 'none',
-                    transition: 'border-color 0.1s, color 0.1s',
-                  }}
-                  onMouseEnter={e => {
-                    (e.currentTarget as HTMLAnchorElement).style.borderColor = 'var(--border-hover)';
-                    (e.currentTarget as HTMLAnchorElement).style.color = 'var(--foreground)';
-                  }}
-                  onMouseLeave={e => {
-                    (e.currentTarget as HTMLAnchorElement).style.borderColor = 'var(--border)';
-                    (e.currentTarget as HTMLAnchorElement).style.color = 'var(--muted-foreground)';
-                  }}
+                  className="flex items-center justify-between px-3 py-2 rounded-lg text-[13px] font-medium bg-transparent border border-[var(--border)] text-[var(--muted-foreground)] no-underline hover:border-[var(--border-hover)] hover:text-[var(--foreground)] transition-colors"
                 >
                   MCP Server
                   <ExternalLink size={12} />
@@ -546,9 +423,8 @@ export function OverviewPage() {
               </div>
             </>
           ) : (
-            /* Getting started panel */
             <div>
-              <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--muted-foreground)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 16 }}>
+              <div className="text-[11px] font-semibold text-[var(--muted-foreground)] tracking-widest uppercase mb-4">
                 Getting started
               </div>
               {[
@@ -556,16 +432,11 @@ export function OverviewPage() {
                 { icon: <Link2 size={13} />, text: 'Or paste a spec URL (Swagger Hub, GitHub, etc.)' },
                 { icon: <Zap size={13} />, text: 'Explore endpoints, test requests, chat with AI' },
               ].map((item, i) => (
-                <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 12 }}>
-                  <span style={{
-                    width: 26, height: 26, borderRadius: 6, flexShrink: 0,
-                    background: 'color-mix(in srgb, var(--foreground) 7%, transparent)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    color: 'var(--muted-foreground)',
-                  }}>
+                <div key={i} className="flex items-start gap-3 mb-3">
+                  <span className="w-7 h-7 rounded-lg flex-shrink-0 bg-[color-mix(in_srgb,var(--foreground)_7%,transparent)] flex items-center justify-center text-[var(--muted-foreground)]">
                     {item.icon}
                   </span>
-                  <span style={{ fontSize: 12.5, color: 'var(--muted-foreground)', lineHeight: 1.5, paddingTop: 5 }}>
+                  <span className="text-[12.5px] text-[var(--muted-foreground)] leading-relaxed pt-1">
                     {item.text}
                   </span>
                 </div>
@@ -573,103 +444,86 @@ export function OverviewPage() {
             </div>
           )}
         </div>
-
       </div>
 
       {/* ── Activity history */}
-      <div style={{ padding: '0 32px 32px' }}>
-        <div style={{ marginBottom: 16, display: 'flex', alignItems: 'baseline', gap: 12, justifyContent: 'space-between' }}>
+      <div className="px-8 pb-8">
+        <div className="flex items-baseline justify-between mb-4">
           <div>
-            <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--foreground)' }}>Activity history</h2>
-            <p style={{ fontSize: 12.5, color: 'var(--muted-foreground)', marginTop: 2 }}>
+            <h2 className="text-[16px] font-bold text-[var(--foreground)] tracking-tight">Activity history</h2>
+            <p className="text-[12.5px] text-[var(--muted-foreground)] mt-0.5">
               Showing recent requests through the studio
             </p>
           </div>
-          <div style={{ display: 'flex', gap: 6 }}>
+          <div className="flex gap-1.5">
             <Link
               to="/logs"
-              style={{
-                display: 'flex', alignItems: 'center', gap: 5,
-                padding: '5px 12px', borderRadius: 20, fontSize: 12, fontWeight: 500,
-                background: 'var(--accent-dim)', color: 'var(--accent)',
-                border: '1px solid rgba(34,197,94,0.2)', textDecoration: 'none',
-              }}
+              className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[12px] font-medium bg-[var(--accent-dim)] text-[var(--accent)] border border-[rgba(34,197,94,0.2)] no-underline"
             >
-              <span className="dot" style={{ background: 'var(--accent)', width: 5, height: 5 }} />
+              <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] inline-block" />
               Live
             </Link>
             <a
               href={`${CLI_BASE_URL}/openapi.json`}
               target="_blank"
               rel="noopener noreferrer"
-              style={{
-                display: 'flex', alignItems: 'center', gap: 5,
-                padding: '5px 12px', borderRadius: 20, fontSize: 12, fontWeight: 500,
-                background: 'transparent',
-                border: '1px solid var(--border)', color: 'var(--muted-foreground)',
-                textDecoration: 'none',
-              }}
+              className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[12px] font-medium bg-transparent border border-[var(--border)] text-[var(--muted-foreground)] no-underline hover:border-[var(--border-hover)] hover:text-[var(--foreground)] transition-colors"
             >
               Spec
             </a>
           </div>
         </div>
 
-        <div style={{
-          background: 'var(--card)', border: '1px solid var(--border)',
-          borderRadius: 10, overflow: 'hidden',
-        }}>
+        <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl overflow-hidden">
           <table className="activity-table">
             <thead>
               <tr>
-                <th style={{ width: '45%' }}>Activity</th>
-                <th style={{ width: '20%' }}>Status</th>
-                <th style={{ width: '25%' }}>Endpoint</th>
-                <th style={{ width: '10%', textAlign: 'right' }}><ChevronDown size={13} /></th>
+                <th className="w-[45%]">Activity</th>
+                <th className="w-[20%]">Status</th>
+                <th className="w-[25%]">Endpoint</th>
+                <th className="w-[10%] text-right"><ChevronDown size={13} /></th>
               </tr>
             </thead>
             <tbody>
               {logs.length === 0 ? (
                 <tr>
-                  <td colSpan={4} style={{ textAlign: 'center', padding: '32px 0', color: 'var(--muted-foreground)', fontSize: 13 }}>
+                  <td colSpan={4} className="text-center py-8 text-[var(--muted-foreground)] text-[13px]">
                     No requests yet — start using the Explorer or AI Chat
                   </td>
                 </tr>
               ) : logs.map(log => (
                 <tr key={log.id}>
                   <td>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <div style={{
-                        width: 28, height: 28, borderRadius: 7, flexShrink: 0,
-                        background: 'var(--elevated)', border: '1px solid var(--border)',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      }}>
-                        <RefreshCw size={12} style={{ color: 'var(--muted-foreground)' }} />
+                    <div className="flex items-center gap-3">
+                      <div className="w-7 h-7 rounded-lg flex-shrink-0 bg-[var(--elevated)] border border-[var(--border)] flex items-center justify-center">
+                        <RefreshCw size={12} className="text-[var(--muted-foreground)]" />
                       </div>
                       <div>
-                        <div style={{ fontWeight: 500, fontSize: 13 }}>
+                        <div className="text-[13px] font-medium">
                           {log.source === 'mcp' ? 'MCP Request' : 'API Request'}
                         </div>
-                        <div style={{ fontSize: 11, color: 'var(--muted-foreground)', marginTop: 1 }}>
+                        <div className="text-[11px] text-[var(--muted-foreground)] mt-0.5">
                           {timeAgo(log.created_at)}
                         </div>
                       </div>
                     </div>
                   </td>
-                  <td>{statusBadge(log.status_code, log.error)}</td>
                   <td>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span className={`method-badge method-${(log.method ?? 'GET').toUpperCase()}`}>
+                    <StatusBadge code={log.status_code} error={log.error} />
+                  </td>
+                  <td>
+                    <div className="flex items-center gap-1.5">
+                      <span className={cn('method-badge', `method-${(log.method ?? 'GET').toUpperCase()}`)}>
                         {(log.method ?? 'GET').toUpperCase()}
                       </span>
-                      <span style={{ fontSize: 12, fontFamily: 'GeistMono, monospace', color: 'var(--muted-foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <span className="text-[12px] font-mono text-[var(--muted-foreground)] overflow-hidden text-ellipsis whitespace-nowrap">
                         {trunc(log.url, 30)}
                       </span>
                     </div>
                   </td>
-                  <td style={{ textAlign: 'right' }}>
+                  <td className="text-right">
                     {log.latency_ms && (
-                      <span style={{ fontSize: 11, color: 'var(--placeholder-foreground)', fontFamily: 'GeistMono, monospace' }}>
+                      <span className="text-[11px] text-[var(--placeholder-foreground)] font-mono">
                         {log.latency_ms}ms
                       </span>
                     )}
@@ -681,11 +535,8 @@ export function OverviewPage() {
         </div>
 
         {logs.length > 0 && (
-          <div style={{ marginTop: 10, textAlign: 'center' }}>
-            <Link
-              to="/logs"
-              style={{ fontSize: 12.5, color: 'var(--accent)', textDecoration: 'none' }}
-            >
+          <div className="mt-3 text-center">
+            <Link to="/logs" className="text-[12.5px] text-[var(--accent)] no-underline hover:underline">
               View all activity →
             </Link>
           </div>

@@ -43,11 +43,16 @@ export async function proxyHandler(req: Request): Promise<Response> {
   const apiPath = url.pathname.replace(/^\/proxy/, "") || "/";
   const { spec } = getState();
 
+  let baseUrl = spec.baseUrl;
+  if (!baseUrl?.startsWith('http') && spec.url) {
+    try { baseUrl = new URL(spec.url).origin; } catch { /* keep */ }
+  }
+
   const authRow = dbQueries.getAuthConfig();
   const authConfig: AuthConfig = authRow
     ? JSON.parse(authRow.config)
     : { type: "none" };
-  const { targetBase, targetPath, extraHeaders } = applyInterceptRules(req.method, apiPath, spec.baseUrl);
+  const { targetBase, targetPath, extraHeaders } = applyInterceptRules(req.method, apiPath, baseUrl);
   const targetUrl = `${targetBase}${targetPath}${url.search}`;
 
   const proxyHeaders: Record<string, string> = {};

@@ -1,7 +1,8 @@
 import { createFileRoute } from '@tanstack/react-router';
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '../lib/api';
-import { Plus, Trash2, Edit2, ArrowRightLeft, X, Check, ToggleLeft, ToggleRight } from 'lucide-react';
+import { cn } from '../lib/utils';
+import { Plus, Trash2, Edit2, ArrowRightLeft, X, Check } from 'lucide-react';
 
 export const Route = createFileRoute('/intercept')({ component: InterceptPage });
 
@@ -32,13 +33,8 @@ interface RuleForm {
 }
 
 const EMPTY_FORM: RuleForm = {
-  name: '',
-  match_method: '*',
-  match_path: '',
-  target_host: '',
-  strip_prefix: '',
-  add_prefix: '',
-  headers: [],
+  name: '', match_method: '*', match_path: '',
+  target_host: '', strip_prefix: '', add_prefix: '', headers: [],
 };
 
 const METHODS = ['*', 'GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
@@ -48,13 +44,11 @@ const METHOD_COLORS: Record<string, string> = {
   PUT: '#3b82f6', PATCH: '#06b6d4', DELETE: '#ef4444',
 };
 
-function methodBadge(m: string) {
+function MethodBadge({ m }: { m: string }) {
   const color = METHOD_COLORS[m] ?? '#8b5cf6';
   return (
-    <span style={{
-      fontSize: 10, fontWeight: 700, fontFamily: 'GeistMono, monospace',
-      background: `${color}22`, color, borderRadius: 4, padding: '2px 6px',
-    }}>
+    <span style={{ color, background: `${color}22` }}
+      className="text-[10px] font-bold font-mono rounded px-1.5 py-0.5 flex-shrink-0">
       {m || '*'}
     </span>
   );
@@ -62,18 +56,8 @@ function methodBadge(m: string) {
 
 function formToBody(f: RuleForm) {
   const add_headers: Record<string, string> = {};
-  for (const { key, value } of f.headers) {
-    if (key.trim()) add_headers[key.trim()] = value;
-  }
-  return {
-    name: f.name,
-    match_method: f.match_method,
-    match_path: f.match_path,
-    target_host: f.target_host,
-    strip_prefix: f.strip_prefix,
-    add_prefix: f.add_prefix,
-    add_headers,
-  };
+  for (const { key, value } of f.headers) { if (key.trim()) add_headers[key.trim()] = value; }
+  return { name: f.name, match_method: f.match_method, match_path: f.match_path, target_host: f.target_host, strip_prefix: f.strip_prefix, add_prefix: f.add_prefix, add_headers };
 }
 
 function ruleToForm(r: InterceptRule): RuleForm {
@@ -82,145 +66,191 @@ function ruleToForm(r: InterceptRule): RuleForm {
     const parsed = JSON.parse(r.add_headers) as Record<string, string>;
     headers = Object.entries(parsed).map(([key, value]) => ({ key, value }));
   } catch { /**/ }
-  return {
-    name: r.name,
-    match_method: r.match_method || '*',
-    match_path: r.match_path,
-    target_host: r.target_host,
-    strip_prefix: r.strip_prefix,
-    add_prefix: r.add_prefix,
-    headers,
-  };
+  return { name: r.name, match_method: r.match_method || '*', match_path: r.match_path, target_host: r.target_host, strip_prefix: r.strip_prefix, add_prefix: r.add_prefix, headers };
 }
 
-const INPUT_STYLE: React.CSSProperties = {
-  width: '100%', padding: '7px 10px', borderRadius: 7, fontSize: 13,
-  background: 'color-mix(in srgb, var(--foreground) 4%, transparent)',
-  border: '1px solid var(--border)', color: 'var(--foreground)',
-  fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box',
-};
+function FieldGroup({ label, hint, required, children }: { label: string; hint?: string; required?: boolean; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label className="text-[11.5px] font-semibold text-[var(--muted-foreground)] uppercase tracking-wider">
+        {label} {required && <span className="text-[var(--destructive)] normal-case">*</span>}
+      </label>
+      {children}
+      {hint && <p className="text-[11px] text-[var(--placeholder-foreground)] leading-snug">{hint}</p>}
+    </div>
+  );
+}
 
-const LABEL_STYLE: React.CSSProperties = {
-  fontSize: 11.5, fontWeight: 600, color: 'var(--muted-foreground)',
-  textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 5, display: 'block',
-};
-
-function RuleForm({
-  initial, onSave, onCancel, saving,
-}: {
-  initial: RuleForm;
-  onSave: (f: RuleForm) => void;
-  onCancel: () => void;
-  saving: boolean;
+function RuleFormPanel({ initial, onSave, onCancel, saving }: {
+  initial: RuleForm; onSave: (f: RuleForm) => void; onCancel: () => void; saving: boolean;
 }) {
   const [form, setForm] = useState<RuleForm>(initial);
   const set = (patch: Partial<RuleForm>) => setForm(f => ({ ...f, ...patch }));
 
   return (
-    <div style={{
-      border: '1px solid var(--border)', borderRadius: 10,
-      padding: 20, background: 'var(--background)', display: 'flex', flexDirection: 'column', gap: 16,
-    }}>
-      {/* Row 1: name + method */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px', gap: 14 }}>
-        <div>
-          <label style={LABEL_STYLE}>Rule name</label>
-          <input style={INPUT_STYLE} placeholder="e.g. Forward to staging" value={form.name} onChange={e => set({ name: e.target.value })} />
-        </div>
-        <div>
-          <label style={LABEL_STYLE}>Match method</label>
-          <select
-            value={form.match_method}
-            onChange={e => set({ match_method: e.target.value })}
-            style={{ ...INPUT_STYLE }}
-          >
-            {METHODS.map(m => <option key={m} value={m}>{m === '*' ? '* (any)' : m}</option>)}
-          </select>
-        </div>
+    <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl overflow-hidden">
+      <div className="px-5 py-4 border-b border-[var(--border)]">
+        <h3 className="text-[13px] font-semibold text-[var(--foreground)]">
+          {initial.name ? `Edit "${initial.name}"` : 'New Intercept Rule'}
+        </h3>
       </div>
-
-      {/* Row 2: match path */}
-      <div>
-        <label style={LABEL_STYLE}>Match path prefix</label>
-        <input style={INPUT_STYLE} placeholder="e.g. /api/v1  (leave empty to match all)" value={form.match_path} onChange={e => set({ match_path: e.target.value })} />
-      </div>
-
-      {/* Row 3: target host */}
-      <div>
-        <label style={LABEL_STYLE}>Target host <span style={{ color: '#ef4444' }}>*</span></label>
-        <input style={INPUT_STYLE} placeholder="e.g. https://staging.example.com" value={form.target_host} onChange={e => set({ target_host: e.target.value })} />
-        <div style={{ fontSize: 11, color: 'var(--muted-foreground)', marginTop: 4 }}>
-          Requests matching the rule are forwarded to this host instead of the spec server.
+      <div className="p-5 flex flex-col gap-4">
+        {/* Name + method */}
+        <div className="grid grid-cols-[1fr_160px] gap-3">
+          <FieldGroup label="Rule name">
+            <input className="input w-full" placeholder="e.g. Forward to staging" value={form.name} onChange={e => set({ name: e.target.value })} />
+          </FieldGroup>
+          <FieldGroup label="Method">
+            <select className="select w-full" value={form.match_method} onChange={e => set({ match_method: e.target.value })}>
+              {METHODS.map(m => <option key={m} value={m}>{m === '*' ? '* (any)' : m}</option>)}
+            </select>
+          </FieldGroup>
         </div>
-      </div>
 
-      {/* Row 4: path rewrite */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-        <div>
-          <label style={LABEL_STYLE}>Strip prefix</label>
-          <input style={INPUT_STYLE} placeholder="e.g. /api/v1" value={form.strip_prefix} onChange={e => set({ strip_prefix: e.target.value })} />
-        </div>
-        <div>
-          <label style={LABEL_STYLE}>Add prefix</label>
-          <input style={INPUT_STYLE} placeholder="e.g. /v2" value={form.add_prefix} onChange={e => set({ add_prefix: e.target.value })} />
-        </div>
-      </div>
+        {/* Match path */}
+        <FieldGroup label="Match path prefix">
+          <input className="input w-full font-mono" placeholder="/api/v1  (leave empty to match all)" value={form.match_path} onChange={e => set({ match_path: e.target.value })} />
+        </FieldGroup>
 
-      {/* Row 5: extra headers */}
-      <div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-          <label style={{ ...LABEL_STYLE, margin: 0 }}>Inject headers</label>
-          <button
-            onClick={() => set({ headers: [...form.headers, { key: '', value: '' }] })}
-            style={{ fontSize: 11, color: 'var(--primary)', background: 'none', border: 'none', cursor: 'pointer', padding: '0 4px', fontFamily: 'inherit', marginLeft: 2 }}
-          >
-            + Add header
-          </button>
+        {/* Target host */}
+        <FieldGroup label="Target host" required hint="Requests are forwarded to this host instead of the spec server.">
+          <input className="input w-full font-mono" placeholder="https://staging.example.com" value={form.target_host} onChange={e => set({ target_host: e.target.value })} />
+        </FieldGroup>
+
+        {/* Path rewrite */}
+        <div className="grid grid-cols-2 gap-3">
+          <FieldGroup label="Strip prefix">
+            <input className="input w-full font-mono" placeholder="/api/v1" value={form.strip_prefix} onChange={e => set({ strip_prefix: e.target.value })} />
+          </FieldGroup>
+          <FieldGroup label="Add prefix">
+            <input className="input w-full font-mono" placeholder="/v2" value={form.add_prefix} onChange={e => set({ add_prefix: e.target.value })} />
+          </FieldGroup>
         </div>
-        {form.headers.map((h, i) => (
-          <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
-            <input
-              style={{ ...INPUT_STYLE, flex: '0 0 40%' }}
-              placeholder="Header-Name"
-              value={h.key}
-              onChange={e => {
-                const hs = [...form.headers];
-                hs[i] = { ...hs[i], key: e.target.value };
-                set({ headers: hs });
-              }}
-            />
-            <input
-              style={{ ...INPUT_STYLE, flex: 1 }}
-              placeholder="value"
-              value={h.value}
-              onChange={e => {
-                const hs = [...form.headers];
-                hs[i] = { ...hs[i], value: e.target.value };
-                set({ headers: hs });
-              }}
-            />
+
+        {/* Inject headers */}
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <label className="text-[11.5px] font-semibold text-[var(--muted-foreground)] uppercase tracking-wider">Inject headers</label>
             <button
-              onClick={() => set({ headers: form.headers.filter((_, j) => j !== i) })}
-              style={{ padding: '0 8px', background: 'none', border: '1px solid var(--border)', borderRadius: 6, cursor: 'pointer', color: 'var(--muted-foreground)', flexShrink: 0 }}
+              type="button"
+              onClick={() => set({ headers: [...form.headers, { key: '', value: '' }] })}
+              className="text-[11.5px] text-[var(--primary)] bg-transparent border-0 cursor-pointer font-sans hover:opacity-80 transition-opacity"
             >
-              <X size={12} />
+              + Add header
             </button>
           </div>
-        ))}
+          {form.headers.length === 0 && (
+            <p className="text-[11.5px] text-[var(--placeholder-foreground)]">No headers — click "Add header" to inject one on every proxied request.</p>
+          )}
+          {form.headers.map((h, i) => (
+            <div key={i} className="flex gap-2">
+              <input className="input font-mono" style={{ flex: '0 0 42%' }} placeholder="Header-Name" value={h.key}
+                onChange={e => { const hs = [...form.headers]; hs[i] = { ...hs[i], key: e.target.value }; set({ headers: hs }); }} />
+              <input className="input flex-1 font-mono" placeholder="value" value={h.value}
+                onChange={e => { const hs = [...form.headers]; hs[i] = { ...hs[i], value: e.target.value }; set({ headers: hs }); }} />
+              <button type="button"
+                onClick={() => set({ headers: form.headers.filter((_, j) => j !== i) })}
+                className="flex items-center justify-center w-8 h-8 border border-[var(--border)] rounded-md bg-transparent cursor-pointer text-[var(--placeholder-foreground)] hover:text-[var(--destructive)] hover:border-[var(--destructive)] transition-colors flex-shrink-0">
+                <X size={12} />
+              </button>
+            </div>
+          ))}
+        </div>
+
+        {/* Actions */}
+        <div className="flex gap-2 justify-end pt-1">
+          <button className="btn btn-ghost btn-sm" onClick={onCancel}>Cancel</button>
+          <button className="btn btn-primary btn-sm gap-1.5" onClick={() => onSave(form)} disabled={saving || !form.target_host.trim()}>
+            {saving ? <span className="spinner" style={{ width: 11, height: 11 }} /> : <Check size={12} />}
+            Save rule
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Toggle({ checked, onChange }: { checked: boolean; onChange: () => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={onChange}
+      className={cn(
+        'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-0 transition-colors duration-200 focus:outline-none',
+        checked ? 'bg-[var(--primary)]' : 'bg-[var(--elevated)]',
+      )}
+    >
+      <span className={cn(
+        'pointer-events-none inline-block h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-transform duration-200 translate-y-[3px]',
+        checked ? 'translate-x-[19px]' : 'translate-x-[3px]',
+      )} />
+    </button>
+  );
+}
+
+function RuleCard({ rule, onEdit, onDelete, onToggle }: {
+  rule: InterceptRule; onEdit: () => void; onDelete: () => void; onToggle: () => void;
+}) {
+  const enabled = Boolean(rule.enabled);
+  let headerCount = 0;
+  try { headerCount = Object.keys(JSON.parse(rule.add_headers)).length; } catch { /**/ }
+
+  return (
+    <div className={cn(
+      'bg-[var(--card)] border border-[var(--border)] rounded-xl overflow-hidden transition-opacity duration-150',
+      !enabled && 'opacity-50',
+    )}>
+      <div className="flex items-center gap-3 px-4 py-3">
+        <Toggle checked={enabled} onChange={onToggle} />
+
+        <span className="font-semibold text-[13.5px] text-[var(--foreground)] flex-1 min-w-0 truncate">
+          {rule.name || <span className="text-[var(--muted-foreground)] italic font-normal">Unnamed rule</span>}
+        </span>
+
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          <MethodBadge m={rule.match_method || '*'} />
+          <span className="text-[12px] font-mono text-[var(--muted-foreground)]">
+            {rule.match_path || '*'}
+          </span>
+        </div>
+
+        <span className="text-[var(--muted-foreground)] text-[13px] flex-shrink-0">→</span>
+
+        <span className="text-[12px] font-mono text-[var(--foreground)] flex-shrink-0 max-w-[200px] truncate">
+          {rule.target_host || '—'}
+        </span>
+
+        <div className="flex items-center gap-1 ml-auto flex-shrink-0">
+          <button className="btn btn-ghost btn-sm btn-icon" onClick={onEdit} title="Edit">
+            <Edit2 size={12} />
+          </button>
+          <button className="btn btn-ghost btn-sm btn-icon text-[var(--destructive)]" onClick={onDelete} title="Delete">
+            <Trash2 size={12} />
+          </button>
+        </div>
       </div>
 
-      {/* Actions */}
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', paddingTop: 4 }}>
-        <button className="btn btn-ghost btn-sm" onClick={onCancel}>Cancel</button>
-        <button
-          className="btn btn-primary btn-sm"
-          onClick={() => onSave(form)}
-          disabled={saving || !form.target_host.trim()}
-        >
-          {saving ? <span className="spinner" style={{ width: 11, height: 11 }} /> : <Check size={12} />}
-          Save rule
-        </button>
-      </div>
+      {(rule.strip_prefix || rule.add_prefix || headerCount > 0) && (
+        <div className="flex items-center gap-2 flex-wrap px-4 pb-3">
+          {rule.strip_prefix && (
+            <span className="text-[10.5px] font-mono text-[var(--muted-foreground)] bg-[var(--elevated)] rounded px-2 py-0.5">
+              strip: {rule.strip_prefix}
+            </span>
+          )}
+          {rule.add_prefix && (
+            <span className="text-[10.5px] font-mono text-[var(--muted-foreground)] bg-[var(--elevated)] rounded px-2 py-0.5">
+              prefix: {rule.add_prefix}
+            </span>
+          )}
+          {headerCount > 0 && (
+            <span className="text-[10.5px] text-[var(--muted-foreground)] bg-[var(--elevated)] rounded px-2 py-0.5">
+              +{headerCount} header{headerCount > 1 ? 's' : ''}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -238,11 +268,8 @@ function InterceptPage() {
       setError(null);
       const data = await apiClient<InterceptRule[]>('/api/intercept');
       setRules(data);
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setLoading(false);
-    }
+    } catch (e) { setError(String(e)); }
+    finally { setLoading(false); }
   };
 
   useEffect(() => { load(); }, []);
@@ -251,8 +278,7 @@ function InterceptPage() {
     setSaving(true);
     try {
       await apiClient('/api/intercept', { method: 'POST', body: JSON.stringify(formToBody(form)) });
-      setShowForm(false);
-      await load();
+      setShowForm(false); await load();
     } catch (e) { setError(String(e)); }
     finally { setSaving(false); }
   };
@@ -261,8 +287,7 @@ function InterceptPage() {
     setSaving(true);
     try {
       await apiClient(`/api/intercept/${id}`, { method: 'PUT', body: JSON.stringify(formToBody(form)) });
-      setEditingId(null);
-      await load();
+      setEditingId(null); await load();
     } catch (e) { setError(String(e)); }
     finally { setSaving(false); }
   };
@@ -283,160 +308,80 @@ function InterceptPage() {
   };
 
   return (
-    <div style={{ padding: '28px 32px', maxWidth: 860, margin: '0 auto' }}>
+    <div className="flex-1 overflow-auto bg-[var(--background)]">
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 24 }}>
-        <div style={{ width: 36, height: 36, borderRadius: 9, background: 'linear-gradient(135deg,#f59e0b,#d97706)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 }}>
-          <ArrowRightLeft size={16} color="#fff" />
-        </div>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--foreground)', letterSpacing: '-0.02em' }}>Request Intercept</div>
-          <div style={{ fontSize: 12.5, color: 'var(--muted-foreground)', marginTop: 3, lineHeight: 1.5 }}>
-            Forward proxy requests to a different host, rewrite paths, and inject headers.
-            Rules are evaluated in order; the first match wins.
-          </div>
+      <div className="flex items-center gap-4 px-8 pt-7 pb-6 border-b border-[var(--border)]">
+        <div>
+          <h1 className="text-[20px] font-bold tracking-tight text-[var(--foreground)]">Request Intercept</h1>
+          <p className="text-[13px] text-[var(--muted-foreground)] mt-1">
+            Forward proxy requests to a different host, rewrite paths, and inject headers. First match wins.
+          </p>
         </div>
         <button
-          className="btn btn-primary btn-sm"
+          className="btn btn-primary btn-sm gap-1.5 ml-auto flex-shrink-0"
           onClick={() => { setShowForm(true); setEditingId(null); }}
           disabled={showForm}
         >
-          <Plus size={13} />
-          New rule
+          <Plus size={13} /> New rule
         </button>
       </div>
 
-      {error && (
-        <div style={{ padding: '10px 14px', background: '#ef444420', border: '1px solid #ef444440', borderRadius: 8, fontSize: 13, color: '#ef4444', marginBottom: 16 }}>
-          {error}
-        </div>
-      )}
+      <div className="px-8 py-6 max-w-[820px] flex flex-col gap-3">
 
-      {/* New rule form */}
-      {showForm && (
-        <div style={{ marginBottom: 20 }}>
-          <RuleForm
+        {error && (
+          <div className="px-4 py-3 bg-[var(--error-dim)] border border-[rgba(239,68,68,0.2)] rounded-lg text-[13px] text-[var(--destructive)]">
+            {error}
+          </div>
+        )}
+
+        {/* New rule form */}
+        {showForm && (
+          <RuleFormPanel
             initial={EMPTY_FORM}
             onSave={handleCreate}
             onCancel={() => setShowForm(false)}
             saving={saving}
           />
-        </div>
-      )}
+        )}
 
-      {/* Rules list */}
-      {loading ? (
-        <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
-          <span className="spinner" style={{ width: 20, height: 20 }} />
-        </div>
-      ) : rules.length === 0 && !showForm ? (
-        <div style={{
-          textAlign: 'center', padding: '60px 20px',
-          border: '1px dashed var(--border)', borderRadius: 12,
-          color: 'var(--muted-foreground)',
-        }}>
-          <ArrowRightLeft size={28} style={{ opacity: 0.3, marginBottom: 12 }} />
-          <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 6 }}>No intercept rules</div>
-          <div style={{ fontSize: 12.5, marginBottom: 16 }}>
-            Rules let you forward requests to a different host or rewrite paths on the fly.
+        {/* Rules list */}
+        {loading ? (
+          <div className="flex justify-center py-12">
+            <span className="spinner" style={{ width: 20, height: 20 }} />
           </div>
-          <button className="btn btn-primary btn-sm" onClick={() => setShowForm(true)}>
-            <Plus size={13} /> Add your first rule
-          </button>
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {rules.map(rule => (
-            <div key={rule.id}>
-              {editingId === rule.id ? (
-                <RuleForm
-                  initial={ruleToForm(rule)}
-                  onSave={form => handleUpdate(rule.id, form)}
-                  onCancel={() => setEditingId(null)}
-                  saving={saving}
-                />
-              ) : (
-                <div style={{
-                  border: '1px solid var(--border)', borderRadius: 10,
-                  padding: '14px 16px', background: 'var(--background)',
-                  opacity: rule.enabled ? 1 : 0.55,
-                  transition: 'opacity 0.15s',
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                    {/* Toggle */}
-                    <button
-                      onClick={() => handleToggle(rule)}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: rule.enabled ? 'var(--primary)' : 'var(--muted-foreground)', padding: 0, flexShrink: 0 }}
-                      title={rule.enabled ? 'Disable rule' : 'Enable rule'}
-                    >
-                      {rule.enabled ? <ToggleRight size={22} /> : <ToggleLeft size={22} />}
-                    </button>
-
-                    {/* Name */}
-                    <span style={{ fontWeight: 600, fontSize: 13.5, flex: 1, minWidth: 120, color: 'var(--foreground)' }}>
-                      {rule.name || <span style={{ color: 'var(--muted-foreground)', fontStyle: 'italic' }}>Unnamed rule</span>}
-                    </span>
-
-                    {/* Match */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
-                      {methodBadge(rule.match_method || '*')}
-                      <span style={{ fontSize: 12, fontFamily: 'GeistMono, monospace', color: 'var(--muted-foreground)' }}>
-                        {rule.match_path || '*'}
-                      </span>
-                    </div>
-
-                    {/* Arrow */}
-                    <span style={{ color: 'var(--muted-foreground)', flexShrink: 0 }}>→</span>
-
-                    {/* Target */}
-                    <span style={{ fontSize: 12, fontFamily: 'GeistMono, monospace', color: 'var(--foreground)', flexShrink: 0, maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {rule.target_host || '—'}
-                    </span>
-
-                    {/* Actions */}
-                    <div style={{ display: 'flex', gap: 4, marginLeft: 'auto', flexShrink: 0 }}>
-                      <button className="btn btn-ghost btn-sm btn-icon" onClick={() => setEditingId(rule.id)} title="Edit">
-                        <Edit2 size={12} />
-                      </button>
-                      <button className="btn btn-ghost btn-sm btn-icon" onClick={() => handleDelete(rule.id)} title="Delete" style={{ color: '#ef4444' }}>
-                        <Trash2 size={12} />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Path rewrite + header badges */}
-                  {(rule.strip_prefix || rule.add_prefix || rule.add_headers !== '{}') && (
-                    <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border)', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                      {rule.strip_prefix && (
-                        <span style={{ fontSize: 10.5, color: 'var(--muted-foreground)', background: 'color-mix(in srgb, var(--foreground) 6%, transparent)', borderRadius: 5, padding: '2px 8px', fontFamily: 'GeistMono, monospace' }}>
-                          strip: {rule.strip_prefix}
-                        </span>
-                      )}
-                      {rule.add_prefix && (
-                        <span style={{ fontSize: 10.5, color: 'var(--muted-foreground)', background: 'color-mix(in srgb, var(--foreground) 6%, transparent)', borderRadius: 5, padding: '2px 8px', fontFamily: 'GeistMono, monospace' }}>
-                          prefix: {rule.add_prefix}
-                        </span>
-                      )}
-                      {(() => {
-                        try {
-                          const h = JSON.parse(rule.add_headers) as Record<string, string>;
-                          const keys = Object.keys(h);
-                          if (keys.length > 0) return (
-                            <span style={{ fontSize: 10.5, color: 'var(--muted-foreground)', background: 'color-mix(in srgb, var(--foreground) 6%, transparent)', borderRadius: 5, padding: '2px 8px' }}>
-                              +{keys.length} header{keys.length > 1 ? 's' : ''}
-                            </span>
-                          );
-                        } catch { /**/ }
-                        return null;
-                      })()}
-                    </div>
-                  )}
-                </div>
-              )}
+        ) : rules.length === 0 && !showForm ? (
+          <div className="flex flex-col items-center text-center py-16 px-6 border border-dashed border-[var(--border)] rounded-xl">
+            <ArrowRightLeft size={28} className="opacity-30 mb-3 text-[var(--muted-foreground)]" />
+            <div className="text-[14px] font-semibold text-[var(--foreground)] mb-1.5">No intercept rules yet</div>
+            <div className="text-[12.5px] text-[var(--muted-foreground)] mb-5 max-w-sm">
+              Rules let you forward requests to a different host or rewrite paths and inject headers on the fly.
             </div>
-          ))}
-        </div>
-      )}
+            <button className="btn btn-primary btn-sm gap-1.5" onClick={() => setShowForm(true)}>
+              <Plus size={13} /> Add your first rule
+            </button>
+          </div>
+        ) : (
+          rules.map(rule => (
+            editingId === rule.id ? (
+              <RuleFormPanel
+                key={rule.id}
+                initial={ruleToForm(rule)}
+                onSave={form => handleUpdate(rule.id, form)}
+                onCancel={() => setEditingId(null)}
+                saving={saving}
+              />
+            ) : (
+              <RuleCard
+                key={rule.id}
+                rule={rule}
+                onEdit={() => setEditingId(rule.id)}
+                onDelete={() => handleDelete(rule.id)}
+                onToggle={() => handleToggle(rule)}
+              />
+            )
+          ))
+        )}
+      </div>
     </div>
   );
 }

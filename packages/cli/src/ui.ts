@@ -55,47 +55,45 @@ export class Spinner {
   }
 }
 
-// ─── Minimal startup banner ───────────────────────────────────────────────────
+// ─── Startup banner ───────────────────────────────────────────────────────────
 export function printBanner(opts: {
   port: number;
   pid: number;
   specTitle?: string;
   specVersion?: string;
   endpointCount?: number;
-  specUrl?: string;
 }) {
-  const { port, pid, specTitle, specVersion, endpointCount, specUrl } = opts;
+  const { port, pid, specTitle, specVersion, endpointCount } = opts;
   const base = `http://localhost:${port}`;
 
-  const specLine = specTitle
-    ? `${paint.bold(specTitle)}  ${paint.dim('v' + (specVersion ?? ''))}`
-    : paint.dim('No spec loaded');
-
-  const endLine = specTitle && endpointCount != null
-    ? paint.dim(`${endpointCount} endpoints`) + (specUrl ? `  ${paint.dim(specUrl)}` : '')
-    : '';
+  const arrow = paint.cyan('➜');
+  const dot   = paint.dim('·');
 
   const hint = [
     `${paint.bold('r')} reload`,
     `${paint.bold('b')} background`,
     `${paint.bold('q')} quit`,
     `${paint.bold('?')} help`,
-  ].join(`  ${paint.dim('·')}  `);
+  ].join(`  ${dot}  `);
 
-  const lines = [
+  const lines: string[] = [
     '',
-    `  ${paint.bold('⚡ OpenAPI Agent')}  ${paint.dim('·')}  ${paint.dim('PID ' + pid)}`,
+    `  ${paint.bold('openapi-agent')}  ${paint.dim('PID ' + pid)}`,
     '',
-    specTitle
-      ? `  ${paint.green('✓')}  ${specLine}`
-      : `  ${paint.yellow('○')}  ${specLine}`,
-    endLine ? `     ${endLine}` : '',
+    `  ${arrow}  ${paint.dim('Studio ')}  ${paint.url(base + '/')}`,
+    `  ${arrow}  ${paint.dim('MCP    ')}  ${paint.url(base + '/mcp')}`,
+    `  ${arrow}  ${paint.dim('OpenAPI')}  ${paint.url(base + '/openapi.json')}`,
     '',
-    `  ${paint.url(base + '/')}  ${paint.dim('·')}  ${paint.url(base + '/mcp')}  ${paint.dim('·')}  ${paint.url(base + '/openapi.json')}`,
-    '',
-    `  ${hint}`,
-    '',
-  ].filter((l, i, a) => !(l === '' && a[i - 1] === '')); // collapse double blanks
+  ];
+
+  if (specTitle) {
+    const ep = endpointCount != null ? `  ${dot}  ${paint.green(endpointCount + ' endpoints')}` : '';
+    lines.push(`  ${paint.green('✓')}  ${paint.bold(specTitle)}  ${paint.dim('v' + (specVersion ?? ''))}${ep}`);
+  } else {
+    lines.push(`  ${paint.yellow('○')}  ${paint.dim('No spec — start with --url <url>')}`);
+  }
+
+  lines.push('', `  ${hint}`, '');
 
   console.log(lines.join('\n'));
 }
