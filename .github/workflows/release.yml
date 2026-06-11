@@ -60,9 +60,9 @@ jobs:
         with:
           bun-version: latest
 
-      - name: Install dependencies
+      - name: Install runtime dependencies
         working-directory: packages/cli
-        run: bun install --frozen-lockfile
+        run: bun install --production   # skips @types/bun → avoids @oven/bun-* tarball issues
 
       - name: Build binary
         working-directory: packages/cli
