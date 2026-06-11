@@ -8,7 +8,7 @@ import {
   RefreshCw, Copy, Check, ExternalLink,
   Zap, Globe, ArrowUpRight, CheckCircle,
   Upload, Link2, FileJson, FileCode2, X,
-  Bot, Activity, Layers, Eye, EyeOff,
+  Bot, Activity, Layers, Eye, EyeOff, Terminal,
 } from 'lucide-react';
 
 export const Route = createFileRoute('/')({ component: OverviewPage });
@@ -387,7 +387,7 @@ const MCP_HINTS: Record<McpClient, string> = {
 };
 
 // ─── Overview page ────────────────────────────────────────────────────────────
-export function OverviewPage() {
+function OverviewPage() {
   const [status, setStatus] = useState<Status | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -426,11 +426,11 @@ export function OverviewPage() {
   return (
     <div className="flex h-full flex-col overflow-hidden bg-[var(--background)]">
 
-      {/* ── Header ── */}
-      <header className="flex shrink-0 items-center justify-between border-b border-[var(--border)] px-6 py-3.5">
+      {/* ── Page header ── */}
+      <header className="flex shrink-0 items-center justify-between border-b border-[var(--border)] px-8 py-4">
         <div>
-          <h1 className="text-[15px] font-bold tracking-tight text-[var(--foreground)]">Overview</h1>
-          <p className="mt-0.5 text-[11.5px] text-[var(--muted-foreground)]">
+          <h1 className="text-[22px] font-bold tracking-tight text-[var(--foreground)] leading-none">Overview</h1>
+          <p className="mt-1 text-[12.5px] text-[var(--muted-foreground)]">
             {specLoaded
               ? `${status!.spec.title} · v${status!.spec.version}`
               : 'Load an OpenAPI spec to get started'}
@@ -438,14 +438,13 @@ export function OverviewPage() {
         </div>
         <div className="flex items-center gap-2">
           <button onClick={load} disabled={refreshing}
-            className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-1.5 text-[12.5px] text-[var(--foreground-secondary)] transition-colors hover:border-[var(--border-hover)] hover:text-[var(--foreground)] disabled:opacity-50">
-            <RefreshCw size={12} className={cn(refreshing && 'animate-spin')} />
+            className="flex items-center gap-1.5 h-8 rounded-lg border border-[var(--border)] bg-transparent px-3 text-[12px] text-[var(--muted-foreground)] transition-colors hover:border-[var(--border-hover)] hover:text-[var(--foreground)] disabled:opacity-40 cursor-pointer font-sans">
+            <RefreshCw size={11} className={cn(refreshing && 'animate-spin')} />
             Refresh
           </button>
           {specLoaded && (
             <a href={cliLink('/openapi.json')} target="_blank" rel="noopener noreferrer"
-              className="flex items-center gap-1.5 rounded-lg bg-[var(--foreground)] px-3 py-1.5 text-[12.5px] font-semibold text-[var(--background)] no-underline transition-opacity hover:opacity-85">
-              <Globe size={12} />
+              className="flex items-center gap-1.5 h-8 rounded-lg bg-[var(--foreground)] px-3 text-[12px] font-semibold text-[var(--background)] no-underline transition-opacity hover:opacity-85">
               View Spec
               <ArrowUpRight size={11} />
             </a>
@@ -454,65 +453,42 @@ export function OverviewPage() {
       </header>
 
       {/* ── Scrollable content ── */}
-      <div className="flex-1 overflow-auto px-6 py-5">
+      <div className="flex-1 overflow-auto">
         {specLoaded ? (
-          <div className="flex max-w-[1040px] flex-col gap-4">
+          <div className="max-w-[960px] px-8 py-6 flex flex-col gap-6">
 
-            {/* Stats row */}
-            <div className="grid grid-cols-3 gap-3">
-
-              {/* Endpoints */}
-              <div className="flex flex-col rounded-xl border border-[var(--border)] bg-[var(--card)] p-5">
-                <div className="mb-4 flex items-center justify-between">
-                  <span className="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">Endpoints</span>
-                  <span className="flex size-[22px] shrink-0 items-center justify-center rounded-md bg-[rgba(59,130,246,0.12)] text-[#3b82f6]">
-                    <Zap size={11} />
-                  </span>
-                </div>
-                <span className="text-[32px] font-bold leading-none tracking-tight text-[var(--foreground)]">
-                  {status!.endpointCount}
-                </span>
-                <span className="mt-2 text-[11px] text-[var(--muted-foreground)]">API operations defined</span>
+            {/* ── Stats strip ── */}
+            <div className="grid grid-cols-3 divide-x divide-[var(--border)] border border-[var(--border)] rounded-xl overflow-hidden bg-[var(--card)]">
+              <div className="px-6 py-5">
+                <div className="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted-foreground)] mb-3">Endpoints</div>
+                <div className="text-[34px] font-bold leading-none tracking-tight text-[var(--foreground)]">{status!.endpointCount}</div>
+                <div className="mt-2 text-[11.5px] text-[var(--muted-foreground)]">API operations</div>
               </div>
-
-              {/* Base URL */}
-              <div className="flex flex-col rounded-xl border border-[var(--border)] bg-[var(--card)] p-5">
-                <div className="mb-4 flex items-center justify-between">
-                  <span className="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">Base URL</span>
-                  <span className="flex size-[22px] shrink-0 items-center justify-center rounded-md bg-[rgba(34,197,94,0.12)] text-[#22c55e]">
-                    <Globe size={11} />
-                  </span>
+              <div className="px-6 py-5">
+                <div className="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted-foreground)] mb-3">Base URL</div>
+                <div className="font-mono text-[12px] text-[var(--foreground)] break-all leading-snug">
+                  {status!.spec.baseUrl || status!.spec.url || <span className="text-[var(--muted-foreground)]">—</span>}
                 </div>
-                <span className="line-clamp-2 break-all font-mono text-[12px] leading-snug text-[var(--foreground)]">
-                  {status!.spec.baseUrl || status!.spec.url || '—'}
-                </span>
-                <span className="mt-2 text-[11px] text-[var(--muted-foreground)]">Server base URL</span>
+                <div className="mt-2 text-[11.5px] text-[var(--muted-foreground)]">Server origin</div>
               </div>
-
-              {/* Version */}
-              <div className="flex flex-col rounded-xl border border-[var(--border)] bg-[var(--card)] p-5">
-                <div className="mb-4 flex items-center justify-between">
-                  <span className="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">Version</span>
-                  <span className="flex size-[22px] shrink-0 items-center justify-center rounded-md bg-[rgba(139,92,246,0.12)] text-[#8b5cf6]">
-                    <CheckCircle size={11} />
-                  </span>
-                </div>
-                <span className="inline-flex w-fit items-center rounded-full bg-[rgba(139,92,246,0.12)] px-2.5 py-1 font-mono text-[14px] font-semibold text-[#8b5cf6]">
+              <div className="px-6 py-5">
+                <div className="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted-foreground)] mb-3">Version</div>
+                <div className="inline-flex items-center font-mono text-[13px] font-semibold text-[var(--foreground)]">
                   v{status!.spec.version}
-                </span>
-                <span className="mt-2 text-[11px] text-[var(--muted-foreground)]">OpenAPI specification</span>
+                </div>
+                <div className="mt-2 text-[11.5px] text-[var(--muted-foreground)]">OpenAPI spec</div>
               </div>
             </div>
 
-            {/* MCP config + quick actions */}
-            <div className="grid grid-cols-[1fr_268px] gap-3">
+            {/* ── MCP + Actions ── */}
+            <div className="grid grid-cols-[1fr_240px] gap-4">
 
               {/* MCP Configuration */}
               <div className="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)]">
-                <div className="flex items-center justify-between border-b border-[var(--border)] px-5 py-3.5">
+                <div className="flex items-center justify-between border-b border-[var(--border)] px-5 py-4">
                   <div>
-                    <div className="text-[13.5px] font-semibold text-[var(--foreground)]">MCP Configuration</div>
-                    <div className="mt-0.5 text-[11.5px] text-[var(--muted-foreground)]">Connect your AI client to this server</div>
+                    <div className="text-[14px] font-semibold text-[var(--foreground)]">MCP Configuration</div>
+                    <div className="mt-0.5 text-[12px] text-[var(--muted-foreground)]">Connect your AI client to this server</div>
                   </div>
                   <a href={mcpUrl} target="_blank" rel="noopener noreferrer"
                     className="flex items-center gap-1.5 rounded-full border border-[rgba(34,197,94,0.28)] bg-[rgba(34,197,94,0.08)] px-2.5 py-1 text-[11px] font-medium text-[#22c55e] no-underline transition-colors hover:bg-[rgba(34,197,94,0.14)]">
@@ -523,7 +499,7 @@ export function OverviewPage() {
                 </div>
 
                 <div className="p-5">
-                  {/* Client tabs */}
+                  {/* Client selector */}
                   <div className="mb-4 flex gap-0.5 rounded-lg bg-[var(--elevated)] p-1">
                     {MCP_CLIENTS.map(c => (
                       <button key={c.id} onClick={() => setMcpClient(c.id)}
@@ -539,14 +515,14 @@ export function OverviewPage() {
                   </div>
 
                   {/* Code block */}
-                  <div className="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--elevated)]">
+                  <div className="overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--elevated)]">
                     <div className="flex items-center justify-between border-b border-[var(--border)] px-3.5 py-2">
                       <span className="truncate font-mono text-[10.5px] text-[var(--muted-foreground)]">
                         {MCP_FILE_LABELS[mcpClient]}
                       </span>
                       <button onClick={() => copy(mcpClient, mcpSnippets[mcpClient])}
                         className={cn(
-                          'ml-3 flex shrink-0 items-center gap-1.5 rounded-md border border-[var(--border)] bg-[var(--card)] px-2 py-1 text-[11px] font-sans transition-colors',
+                          'ml-3 flex shrink-0 items-center gap-1.5 rounded-md border border-[var(--border)] bg-[var(--card)] px-2 py-1 text-[11px] font-sans cursor-pointer transition-colors',
                           copied === mcpClient ? 'text-[#22c55e]' : 'text-[var(--muted-foreground)] hover:text-[var(--foreground)]',
                         )}>
                         {copied === mcpClient ? <Check size={10} /> : <Copy size={10} />}
@@ -572,38 +548,37 @@ export function OverviewPage() {
                   <div className="border-b border-[var(--border)] px-4 py-3">
                     <span className="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">Quick Actions</span>
                   </div>
-                  <div className="flex flex-col gap-1.5 p-3">
+                  <div className="flex flex-col p-2 gap-0.5">
                     <Link to="/explorer"
-                      className="flex items-center justify-between rounded-lg bg-[var(--foreground)] px-3.5 py-2.5 text-[12.5px] font-semibold text-[var(--background)] no-underline transition-opacity hover:opacity-85">
-                      Open Explorer <ArrowUpRight size={12} />
+                      className="flex items-center justify-between rounded-lg bg-[var(--foreground)] px-3 py-2.5 text-[12.5px] font-semibold text-[var(--background)] no-underline transition-opacity hover:opacity-85">
+                      Open Explorer <ArrowUpRight size={11} />
                     </Link>
                     <Link to="/ai"
-                      className="flex items-center justify-between rounded-lg border border-[var(--border)] px-3.5 py-2.5 text-[12.5px] text-[var(--foreground-secondary)] no-underline transition-colors hover:border-[var(--border-hover)] hover:bg-[var(--elevated)] hover:text-[var(--foreground)]">
-                      AI Chat <Bot size={12} />
+                      className="flex items-center justify-between rounded-lg px-3 py-2.5 text-[12.5px] text-[var(--muted-foreground)] no-underline transition-colors hover:bg-[var(--elevated)] hover:text-[var(--foreground)]">
+                      AI Chat <Bot size={11} />
                     </Link>
                     <Link to="/logs"
-                      className="flex items-center justify-between rounded-lg border border-[var(--border)] px-3.5 py-2.5 text-[12.5px] text-[var(--foreground-secondary)] no-underline transition-colors hover:border-[var(--border-hover)] hover:bg-[var(--elevated)] hover:text-[var(--foreground)]">
-                      View Logs <Activity size={12} />
+                      className="flex items-center justify-between rounded-lg px-3 py-2.5 text-[12.5px] text-[var(--muted-foreground)] no-underline transition-colors hover:bg-[var(--elevated)] hover:text-[var(--foreground)]">
+                      View Logs <Activity size={11} />
                     </Link>
                     <a href={cliLink('/openapi.json')} target="_blank" rel="noopener noreferrer"
-                      className="flex items-center justify-between rounded-lg border border-[var(--border)] px-3.5 py-2.5 text-[12.5px] text-[var(--foreground-secondary)] no-underline transition-colors hover:border-[var(--border-hover)] hover:bg-[var(--elevated)] hover:text-[var(--foreground)]">
-                      Raw Spec <ExternalLink size={12} />
+                      className="flex items-center justify-between rounded-lg px-3 py-2.5 text-[12.5px] text-[var(--muted-foreground)] no-underline transition-colors hover:bg-[var(--elevated)] hover:text-[var(--foreground)]">
+                      Raw Spec <ExternalLink size={11} />
                     </a>
                   </div>
                 </div>
 
-                {/* MCP endpoint info */}
+                {/* MCP Endpoint */}
                 <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
-                  <div className="mb-3 text-[10px] font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">MCP Endpoint</div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 mb-3">
                     <span className="size-1.5 shrink-0 rounded-full bg-[#22c55e]" style={{ boxShadow: '0 0 5px rgba(34,197,94,0.7)' }} />
-                    <span className="text-[12.5px] font-medium text-[var(--foreground)]">Live</span>
+                    <span className="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">MCP Endpoint</span>
                     <a href={mcpUrl} target="_blank" rel="noopener noreferrer"
-                      className="ml-auto text-[var(--muted-foreground)] no-underline transition-colors hover:text-[var(--foreground)]">
-                      <ExternalLink size={11} />
+                      className="ml-auto text-[var(--placeholder-foreground)] no-underline transition-colors hover:text-[var(--foreground)]">
+                      <ExternalLink size={10} />
                     </a>
                   </div>
-                  <div className="mt-2.5 overflow-hidden rounded-lg bg-[var(--elevated)] px-2.5 py-2">
+                  <div className="overflow-hidden rounded-lg bg-[var(--elevated)] px-3 py-2">
                     <span className="break-all font-mono text-[10.5px] text-[var(--muted-foreground)]">{mcpUrl}</span>
                   </div>
                 </div>
@@ -612,23 +587,69 @@ export function OverviewPage() {
 
           </div>
         ) : (
-          /* ── No spec loaded ── */
-          <div className="grid max-w-[820px] grid-cols-[1fr_260px] gap-4">
-            <SpecLoader onLoaded={load} />
-            <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-5">
-              <div className="mb-4 text-[10px] font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">Getting started</div>
-              {[
-                { icon: <FileCode2 size={13} />, text: 'Upload an OpenAPI 3.x YAML or JSON file' },
-                { icon: <Link2 size={13} />, text: 'Or paste a spec URL (Swagger Hub, GitHub, etc.)' },
-                { icon: <Zap size={13} />, text: 'Explore endpoints, test requests, chat with AI' },
-              ].map((item, i) => (
-                <div key={i} className="mb-3 flex items-start gap-3">
-                  <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-[color-mix(in_srgb,var(--foreground)_7%,transparent)] text-[var(--muted-foreground)]">
-                    {item.icon}
-                  </span>
-                  <span className="pt-1 text-[12.5px] leading-relaxed text-[var(--muted-foreground)]">{item.text}</span>
+          /* ── No spec loaded — centered ── */
+          <div className="flex h-full items-center justify-center p-8">
+            <div className="w-full max-w-[480px]">
+              <h1 className="mb-1 text-[26px] font-bold tracking-tight text-[var(--foreground)] leading-tight">Welcome to Wasper</h1>
+              <p className="mb-8 text-[13.5px] text-[var(--muted-foreground)]">Load an OpenAPI specification to get started.</p>
+              <SpecLoader onLoaded={load} />
+              <div className="mt-5 flex flex-col gap-2.5">
+                {[
+                  { icon: FileCode2, text: 'Supports OpenAPI 3.x YAML and JSON' },
+                  { icon: Link2, text: 'Load from URL — Swagger Hub, GitHub, or any public endpoint' },
+                  { icon: Zap, text: 'Explore endpoints, run requests, and chat with AI' },
+                ].map(({ icon: Icon, text }, i) => (
+                  <div key={i} className="flex items-center gap-3">
+                    <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-[color-mix(in_srgb,var(--foreground)_7%,transparent)] text-[var(--muted-foreground)]">
+                      <Icon size={11} />
+                    </span>
+                    <span className="text-[12.5px] text-[var(--muted-foreground)]">{text}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* ── Install command ── */}
+              <div className="mt-7">
+                <div className="flex items-center gap-2 mb-2">
+                  <Terminal size={11} className="text-[var(--muted-foreground)]" />
+                  <span className="text-[11px] font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">Install the CLI</span>
                 </div>
-              ))}
+                <div className="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--elevated)]">
+                  {/* curl */}
+                  <div className="flex items-center justify-between border-b border-[var(--border)] px-3.5 py-2.5">
+                    <code className="font-mono text-[12px] text-[var(--foreground)] select-all">
+                      curl -fsSL https://studio.stroke.click/install.sh | sh
+                    </code>
+                    <button
+                      onClick={() => copy('install-curl', 'curl -fsSL https://studio.stroke.click/install.sh | sh')}
+                      className={cn(
+                        'ml-3 flex shrink-0 items-center gap-1.5 rounded-md border border-[var(--border)] bg-[var(--card)] px-2 py-1 text-[11px] font-sans cursor-pointer transition-colors',
+                        copied === 'install-curl' ? 'text-[#22c55e]' : 'text-[var(--muted-foreground)] hover:text-[var(--foreground)]',
+                      )}
+                    >
+                      {copied === 'install-curl' ? <Check size={10} /> : <Copy size={10} />}
+                    </button>
+                  </div>
+                  {/* bun */}
+                  <div className="flex items-center justify-between px-3.5 py-2.5">
+                    <code className="font-mono text-[12px] text-[var(--muted-foreground)] select-all">
+                      bun add -g wasper-cli
+                    </code>
+                    <button
+                      onClick={() => copy('install-bun', 'bun add -g wasper-cli')}
+                      className={cn(
+                        'ml-3 flex shrink-0 items-center gap-1.5 rounded-md border border-[var(--border)] bg-[var(--card)] px-2 py-1 text-[11px] font-sans cursor-pointer transition-colors',
+                        copied === 'install-bun' ? 'text-[#22c55e]' : 'text-[var(--muted-foreground)] hover:text-[var(--foreground)]',
+                      )}
+                    >
+                      {copied === 'install-bun' ? <Check size={10} /> : <Copy size={10} />}
+                    </button>
+                  </div>
+                </div>
+                <p className="mt-2 text-[11px] text-[var(--placeholder-foreground)]">
+                  Then run <code className="font-mono">wasper --url &lt;spec-url&gt;</code> to launch the studio.
+                </p>
+              </div>
             </div>
           </div>
         )}

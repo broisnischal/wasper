@@ -24,7 +24,7 @@ import {
   Bookmark, BookmarkPlus, Share2, Route as RouteIcon,
   FlaskConical, SlidersHorizontal, ShieldAlert, Terminal, Globe, Info,
   CheckCircle2, XCircle, Clock, RefreshCcw, MoreHorizontal,
-  Rows2, Columns2,
+  Rows2, Columns2, ChevronsUpDown, PanelLeftClose, PanelLeftOpen, Sparkles,
 } from 'lucide-react';
 
 export const Route = createFileRoute('/explorer')({ component: ExplorerPage });
@@ -1018,36 +1018,70 @@ function EndpointTree({ ops, onSelect, activeId, onContextMenu }: {
     groups[tag]!.push(op);
   }
 
+  const MC: Record<string, string> = {
+    GET: 'var(--method-get)', POST: 'var(--method-post)', PUT: 'var(--method-put)',
+    PATCH: 'var(--method-patch)', DELETE: 'var(--method-delete)',
+    HEAD: 'var(--method-head)', OPTIONS: 'var(--method-head)',
+  };
+
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      <div className="px-2.5 py-2 border-b border-[var(--border)] flex-shrink-0">
-        <div className="relative">
-          <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--placeholder-foreground)] pointer-events-none" />
-          <input className="input w-full h-7 pl-7 text-[12px]" placeholder="Search…" value={search} onChange={e => setSearch(e.target.value)} />
+      {/* Search bar */}
+      <div className="px-2 py-2 border-b border-[var(--border)] flex-shrink-0">
+        <div className="relative flex items-center">
+          <Search size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--placeholder-foreground)] pointer-events-none" />
+          <input
+            className="input w-full h-7 pl-7 pr-10 text-[12px] bg-[var(--elevated)]"
+            placeholder="Filter endpoints…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+          <span className="absolute right-2 text-[10px] text-[var(--placeholder-foreground)] font-mono pointer-events-none select-none">
+            {filtered.length === ops.length ? ops.length : `${filtered.length}/${ops.length}`}
+          </span>
         </div>
-        <div className="text-[10.5px] text-[var(--placeholder-foreground)] mt-1.5 px-0.5">{filtered.length} of {ops.length}</div>
       </div>
-      <div className="flex-1 overflow-y-auto py-1">
+
+      {/* Endpoint list */}
+      <div className="flex-1 overflow-y-auto">
         {Object.entries(groups).map(([tag, tagOps]) => (
-          <div key={tag}>
-            <button onClick={() => setCollapsed(c => ({ ...c, [tag]: !c[tag] }))}
-              className="flex items-center gap-1.5 w-full px-2.5 py-1.5 bg-transparent border-0 cursor-pointer text-[var(--muted-foreground)] text-[10.5px] font-semibold tracking-widest uppercase font-sans hover:text-[var(--foreground)] transition-colors">
-              {collapsed[tag] ? <ChevronRight size={10} className="flex-shrink-0 opacity-50" /> : <ChevronDown size={10} className="flex-shrink-0 opacity-50" />}
-              {collapsed[tag] ? <Folder size={11} className="flex-shrink-0 text-[var(--placeholder-foreground)]" /> : <FolderOpen size={11} className="flex-shrink-0 opacity-50" />}
-              <span className="flex-1 text-left truncate">{tag}</span>
-              <span className="bg-[var(--elevated)] text-[var(--placeholder-foreground)] rounded px-1 text-[9.5px]">{tagOps.length}</span>
+          <div key={tag} className="ep-group">
+            {/* Group header */}
+            <button
+              onClick={() => setCollapsed(c => ({ ...c, [tag]: !c[tag] }))}
+              className="ep-group-header"
+            >
+              {collapsed[tag]
+                ? <ChevronRight size={9} className="flex-shrink-0 opacity-40" />
+                : <ChevronDown size={9} className="flex-shrink-0 opacity-40" />}
+              <span className="flex-1 text-left truncate">{tag.toLowerCase().replace(/_/g, ' ')}</span>
+              <span className="ep-count">{tagOps.length}</span>
             </button>
-            {!collapsed[tag] && tagOps.map(op => (
-              <button key={op.operationId} onClick={() => onSelect(op)} onContextMenu={e => onContextMenu?.(e, op)} className={cn('endpoint-item', activeId === op.operationId && 'active')}>
-                <span className={`method-badge method-${op.method.toUpperCase()}`}>{op.method.toUpperCase()}</span>
-                <span className={cn('text-[12px] overflow-hidden text-ellipsis whitespace-nowrap flex-1', activeId === op.operationId ? 'text-[var(--foreground)]' : 'text-[var(--muted-foreground)]')}>
-                  {op.path}
-                </span>
-              </button>
-            ))}
+
+            {/* Endpoint rows */}
+            {!collapsed[tag] && tagOps.map(op => {
+              const isActive = activeId === op.operationId;
+              const color = MC[op.method.toUpperCase()] ?? 'var(--muted-foreground)';
+              return (
+                <button
+                  key={`${op.method}_${op.path}`}
+                  onClick={() => onSelect(op)}
+                  onContextMenu={e => onContextMenu?.(e, op)}
+                  className={cn('ep-row', isActive && 'active')}
+                >
+                  <span className="ep-method" style={{ color }}>{op.method.toUpperCase()}</span>
+                  <span className="ep-path">{op.path}</span>
+                </button>
+              );
+            })}
           </div>
         ))}
-        {filtered.length === 0 && <div className="empty-state"><Search size={20} /><span className="text-[12px]">No endpoints found</span></div>}
+        {filtered.length === 0 && (
+          <div className="empty-state">
+            <Search size={18} className="opacity-30" />
+            <span className="text-[12px]">No endpoints match</span>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1173,10 +1207,28 @@ function NetworkInfoPanel({ url, status, statusText, headers, networkInfo, size,
 
 function ResponsePanel({ response, loading }: { response: ResponseResult | null; loading: boolean }) {
   type RespView = 'body' | 'headers' | 'cookies' | 'raw' | 'preview' | 'schema' | 'timing' | 'network';
-  const [view, setView] = useState<RespView>('body');
-  const [bodyMode, setBodyMode] = useState<'tree' | 'pretty'>('tree');
+  const VALID_VIEWS: RespView[] = ['body', 'headers', 'cookies', 'raw', 'preview', 'schema', 'timing', 'network'];
+  const [view, setViewRaw] = useState<RespView>(() => {
+    const s = typeof window !== 'undefined' ? localStorage.getItem('resp_view') : null;
+    return (s && VALID_VIEWS.includes(s as RespView) ? s : 'body') as RespView;
+  });
+  const [bodyMode, setBodyModeRaw] = useState<'tree' | 'pretty'>(() => {
+    const s = typeof window !== 'undefined' ? localStorage.getItem('resp_body_mode') : null;
+    return s === 'pretty' ? 'pretty' : 'tree';
+  });
+  const setView = (v: RespView) => { setViewRaw(v); localStorage.setItem('resp_view', v); };
+  const setBodyMode = (m: 'tree' | 'pretty') => { setBodyModeRaw(m); localStorage.setItem('resp_body_mode', m); };
   const [filter, setFilter] = useState('');
-  const [filterOpen, setFilterOpen] = useState(false);
+  const [filterOpen, setFilterOpenRaw] = useState(() =>
+    typeof window !== 'undefined' ? localStorage.getItem('resp_filter_open') === '1' : false
+  );
+  const setFilterOpen = (v: boolean | ((prev: boolean) => boolean)) => {
+    setFilterOpenRaw(prev => {
+      const next = typeof v === 'function' ? v(prev) : v;
+      localStorage.setItem('resp_filter_open', next ? '1' : '0');
+      return next;
+    });
+  };
   const [copied, setCopied] = useState<string | null>(null);
   const treeControls = useRef<import('../components/JsonTree').JsonTreeControls | null>(null);
 
@@ -1265,60 +1317,53 @@ function ResponsePanel({ response, loading }: { response: ResponseResult | null;
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
 
-      {/* ── Single combined bar: status + tabs + controls */}
-      <div className="flex items-center border-b border-[var(--border)] bg-[var(--card)] flex-shrink-0" style={{ minHeight: 36 }}>
-        {/* Status pill */}
-        <div className="flex items-center gap-2 px-3 border-r border-[var(--border)] flex-shrink-0 self-stretch">
-          <span className={cn('font-bold text-[12px] font-mono', scClass(response.status))}>
-            {response.status}
-          </span>
-          <span className="text-[11px] text-[var(--placeholder-foreground)] flex items-center gap-1"><Clock size={10} />{response.latency}ms</span>
-          <span className="text-[11px] text-[var(--placeholder-foreground)]">{fmtSize(response.size)}</span>
+      {/* ── Row 1: status meta + actions */}
+      <div className="flex items-center gap-3 px-3 border-b border-[var(--border)] bg-[var(--card)] flex-shrink-0" style={{ height: 34 }}>
+        {/* Status badge */}
+        <span className={cn('font-bold text-[13px] font-mono flex-shrink-0', scClass(response.status))}>
+          {response.status}
+        </span>
+
+        {/* Meta pills */}
+        <div className="flex items-center gap-2 text-[11px] text-[var(--placeholder-foreground)] flex-shrink-0">
+          <span className="flex items-center gap-1"><Clock size={10} />{response.latency}ms</span>
+          <span className="text-[var(--border)]">·</span>
+          <span>{fmtSize(response.size)}</span>
           {contentType && (
-            <span className="text-[10.5px] text-[var(--placeholder-foreground)] font-mono hidden sm:block truncate max-w-[120px]" title={contentType}>
-              {contentType.split(';')[0]}
-            </span>
-          )}
-          {response.redirectedTo && (
-            <span className="text-[10.5px] text-[var(--warning,#f59e0b)] font-mono truncate max-w-[160px]" title={response.redirectedTo}>
-              ↪ {response.redirectedTo}
-            </span>
-          )}
-        </div>
-
-        {/* Tabs */}
-        <div className="flex items-center gap-[2px] flex-1 overflow-x-auto min-w-0 px-1.5">
-          {tabs.map(t => (
-            <button key={t.id} className={cn('sub-tab', view === t.id && 'active')} onClick={() => setView(t.id)}>
-              {t.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Right-side controls */}
-        <div className="flex items-center gap-0.5 px-2 flex-shrink-0">
-          {/* Expand / Collapse — only for JSON tree */}
-          {view === 'body' && isJson && bodyMode === 'tree' && (
             <>
-              <button
-                className="btn btn-ghost btn-sm h-6 px-1.5 text-[10.5px]"
-                onClick={() => treeControls.current?.expandAll()}
-                title="Expand all"
-              >↕ all</button>
-              <button
-                className="btn btn-ghost btn-sm h-6 px-1.5 text-[10.5px]"
-                onClick={() => treeControls.current?.collapseAll()}
-                title="Collapse all"
-              >↕</button>
+              <span className="text-[var(--border)]">·</span>
+              <span className="font-mono truncate max-w-[140px]" title={contentType}>{contentType.split(';')[0]}</span>
             </>
           )}
-          {/* jq filter toggle */}
+          {response.redirectedTo && (
+            <>
+              <span className="text-[var(--border)]">·</span>
+              <span className="text-[var(--warning,#f59e0b)] truncate max-w-[160px]" title={response.redirectedTo}>↪ {response.redirectedTo}</span>
+            </>
+          )}
+        </div>
+
+        {/* Spacer */}
+        <div className="flex-1" />
+
+        {/* Controls */}
+        <div className="flex items-center gap-0.5">
+          {view === 'body' && isJson && bodyMode === 'tree' && (
+            <>
+              <button className="btn btn-ghost btn-sm h-6 px-1.5 text-[10.5px] gap-1" onClick={() => treeControls.current?.expandAll()} title="Expand all">
+                <ChevronsUpDown size={10} />all
+              </button>
+              <button className="btn btn-ghost btn-sm h-6 px-1.5 text-[10.5px]" onClick={() => treeControls.current?.collapseAll()} title="Collapse all">
+                <ChevronsUpDown size={10} />
+              </button>
+            </>
+          )}
           {view === 'body' && isJson && (
             <button
               className={cn(
                 'btn btn-ghost btn-sm btn-icon h-6 w-6',
                 filterOpen && 'bg-[color-mix(in_srgb,var(--foreground)_10%,transparent)] text-[var(--foreground)]',
-                !filterOpen && (filter ? 'text-[var(--primary)]' : ''),
+                !filterOpen && filter ? 'text-[var(--primary)]' : '',
               )}
               onClick={() => setFilterOpen(v => !v)}
               title={filterOpen ? 'Hide filter' : 'Filter / jq'}
@@ -1326,15 +1371,14 @@ function ResponsePanel({ response, loading }: { response: ResponseResult | null;
               <Search size={11} />
             </button>
           )}
-          {/* Tree / Pretty toggle */}
           {view === 'body' && isJson && (
-            <div className="flex items-center gap-0.5 ml-0.5 pl-1 border-l border-[var(--border)]">
+            <div className="flex items-center gap-0.5 pl-1 border-l border-[var(--border)] ml-0.5">
               <button
-                className={cn('btn btn-ghost btn-sm h-6 px-1.5 gap-1 text-[10.5px]', bodyMode === 'tree' && 'bg-[color-mix(in_srgb,var(--foreground)_10%,transparent)] text-[var(--foreground)]')}
-                onClick={() => setBodyMode('tree')} title="Collapsible tree"
+                className={cn('btn btn-ghost btn-sm btn-icon h-6 w-6', bodyMode === 'tree' && 'bg-[color-mix(in_srgb,var(--foreground)_10%,transparent)] text-[var(--foreground)]')}
+                onClick={() => setBodyMode('tree')} title="Tree view"
               ><Braces size={10} /></button>
               <button
-                className={cn('btn btn-ghost btn-sm h-6 px-1.5 gap-1 text-[10.5px]', bodyMode === 'pretty' && 'bg-[color-mix(in_srgb,var(--foreground)_10%,transparent)] text-[var(--foreground)]')}
+                className={cn('btn btn-ghost btn-sm btn-icon h-6 w-6', bodyMode === 'pretty' && 'bg-[color-mix(in_srgb,var(--foreground)_10%,transparent)] text-[var(--foreground)]')}
                 onClick={() => setBodyMode('pretty')} title="Pretty text"
               ><AlignLeft size={10} /></button>
             </div>
@@ -1352,6 +1396,15 @@ function ResponsePanel({ response, loading }: { response: ResponseResult | null;
             <Download size={11} />
           </a>
         </div>
+      </div>
+
+      {/* ── Row 2: tabs */}
+      <div className="flex items-center gap-[2px] px-1.5 border-b border-[var(--border)] bg-[var(--background)] flex-shrink-0" style={{ height: 32 }}>
+        {tabs.map(t => (
+          <button key={t.id} className={cn('sub-tab', view === t.id && 'active')} onClick={() => setView(t.id)}>
+            {t.label}
+          </button>
+        ))}
       </div>
 
       {/* ── jq filter row — only when toggled open */}
@@ -1872,7 +1925,10 @@ function ExplorerPage() {
   const [reqTab, setReqTab] = useState<ReqTab>('params');
   const [splitPct, setSplitPct] = useState(0.45);
   const [dragging, setDragging] = useState(false);
-  const [splitDir, setSplitDir] = useState<'v' | 'h'>('v');
+  const [splitDir, setSplitDir] = useState<'v' | 'h'>(() =>
+    (typeof window !== 'undefined' ? (localStorage.getItem('splitDir') as 'v' | 'h') : null) ?? 'v'
+  );
+  const changeSplitDir = (d: 'v' | 'h') => { setSplitDir(d); localStorage.setItem('splitDir', d); };
   const [ExplorerHotkeys, setExplorerHotkeys] = useState<typeof import('../components/ExplorerHotkeys').ExplorerHotkeys | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const urlInputRef = useRef<HTMLInputElement>(null);
@@ -2277,8 +2333,35 @@ function ExplorerPage() {
     };
   }, [tab, activeEnv, activeWs]);
 
+  // Apply JSON body suggested by AI panel
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const json = (e as CustomEvent<string>).detail;
+      if (json && tab) upd(tab.id, { body: json, bodyType: 'json' });
+    };
+    window.addEventListener('ai-apply-body', handler);
+    return () => window.removeEventListener('ai-apply-body', handler);
+  }, [tab]);
+
+  // Keep AI panel context in sync with active tab + response
+  useEffect(() => {
+    if (!tab) return;
+    const ctx = {
+      page: 'explorer',
+      method: tab.method,
+      url: tab.url || undefined,
+      path: tab.url ? (() => { try { return new URL(tab.url).pathname; } catch { return tab.url; } })() : undefined,
+      requestBody: tab.body || undefined,
+      requestHeaders: Object.fromEntries(tab.headers.filter(h => h.key && h.enabled).map(h => [h.key, h.value])),
+      responseStatus: tab.response?.status,
+      responseBody: tab.response?.body,
+      responseContentType: tab.response?.headers?.['content-type'] ?? tab.response?.headers?.['Content-Type'],
+    };
+    window.dispatchEvent(new CustomEvent('set-ai-context', { detail: ctx }));
+  }, [tab?.id, tab?.method, tab?.url, tab?.body, tab?.response]);
+
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
       {ExplorerHotkeys && (
         <ExplorerHotkeys
           sendRef={sendRef} addTabRef={addTabRef} updRef={updRef}
@@ -2340,7 +2423,7 @@ function ExplorerPage() {
         {endpointPanelOpen && (
           <div className="w-[240px] min-w-[180px] border-r border-[var(--border)] flex flex-col overflow-hidden bg-[var(--sidebar)] flex-shrink-0">
             {/* Panel header with tab toggle */}
-            <div className="flex items-center h-[37px] px-2 border-b border-[var(--border)] flex-shrink-0 gap-0.5">
+            <div className="flex items-center h-[36px] px-2 border-b border-[var(--border)] flex-shrink-0 gap-0.5">
               <button
                 onClick={() => setShowSaved(false)}
                 className={cn(
@@ -2369,6 +2452,14 @@ function ExplorerPage() {
                 {showSaved && savedRequests.length > 0 && (
                   <span className="text-[9px] font-mono opacity-60">{savedRequests.length}</span>
                 )}
+              </button>
+              <div className="flex-1" />
+              <button
+                onClick={toggleEndpointPanel}
+                className="flex items-center justify-center w-6 h-6 rounded text-[var(--placeholder-foreground)] hover:text-[var(--muted-foreground)] hover:bg-[color-mix(in_srgb,var(--foreground)_5%,transparent)] transition-colors flex-shrink-0"
+                title="Hide panel"
+              >
+                <PanelLeftClose size={13} />
               </button>
             </div>
 
@@ -2451,63 +2542,6 @@ function ExplorerPage() {
               </button>
             </div>
 
-            {/* Right controls */}
-            <div className="flex items-center gap-1.5 flex-shrink-0 px-2 border-l border-[var(--border)]">
-              {/* Split layout toggle */}
-              <div className="flex items-center gap-px">
-                <button
-                  className={cn(
-                    'flex items-center justify-center w-5 h-5 rounded transition-colors',
-                    splitDir === 'v'
-                      ? 'text-[var(--accent)] bg-[var(--accent-dim)]'
-                      : 'text-[var(--placeholder-foreground)] hover:text-[var(--muted-foreground)] hover:bg-[color-mix(in_srgb,var(--foreground)_5%,transparent)]',
-                  )}
-                  onClick={() => setSplitDir('v')}
-                  title="Vertical split (stacked)"
-                >
-                  <Rows2 size={11} />
-                </button>
-                <button
-                  className={cn(
-                    'flex items-center justify-center w-5 h-5 rounded transition-colors',
-                    splitDir === 'h'
-                      ? 'text-[var(--accent)] bg-[var(--accent-dim)]'
-                      : 'text-[var(--placeholder-foreground)] hover:text-[var(--muted-foreground)] hover:bg-[color-mix(in_srgb,var(--foreground)_5%,transparent)]',
-                  )}
-                  onClick={() => setSplitDir('h')}
-                  title="Horizontal split (side by side)"
-                >
-                  <Columns2 size={11} />
-                </button>
-              </div>
-              <div className="w-px h-3 bg-[var(--border)] flex-shrink-0" />
-              {/* Env selector */}
-              <div className="flex items-center gap-1">
-                {activeEnv && <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: activeEnv.color }} />}
-                <select
-                  className="text-[11px] bg-transparent border-0 outline-none cursor-pointer text-[var(--muted-foreground)] font-sans max-w-[110px]"
-                  value={tab.envId}
-                  onChange={e => upd(tab.id, { envId: e.target.value })}
-                  title="Environment for this request"
-                >
-                  <option value="">Env: inherit{activeWs?.envId ? '' : globalEnv ? ` (${globalEnv.name})` : ''}</option>
-                  <option value="none">Env: none</option>
-                  {envs.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-                </select>
-              </div>
-              <button
-                className={cn(
-                  'flex items-center justify-center w-6 h-6 rounded transition-colors flex-shrink-0',
-                  endpointPanelOpen
-                    ? 'bg-[color-mix(in_srgb,var(--foreground)_9%,transparent)] text-[var(--foreground-secondary)]'
-                    : 'text-[var(--placeholder-foreground)] hover:text-[var(--muted-foreground)] hover:bg-[color-mix(in_srgb,var(--foreground)_5%,transparent)]',
-                )}
-                onClick={toggleEndpointPanel}
-                title={(endpointPanelOpen ? 'Hide' : 'Show') + ' endpoints'}
-              >
-                <Layers size={12} />
-              </button>
-            </div>
           </div>
 
           {/* ── URL bar */}
@@ -2579,14 +2613,15 @@ function ExplorerPage() {
                 className="flex items-center gap-1 flex-shrink-0 px-2 rounded-lg border transition-colors"
                 style={{
                   height: 34,
+                  maxWidth: tab.interceptRuleId ? 140 : 90,
                   borderColor: tab.interceptRuleId ? 'var(--accent, #6366f1)' : 'var(--border)',
                   background: tab.interceptRuleId ? 'color-mix(in srgb,var(--accent,#6366f1) 8%,transparent)' : 'var(--input-bg)',
                 }}
               >
                 <RouteIcon size={10} style={{ color: tab.interceptRuleId ? 'var(--accent, #6366f1)' : 'var(--placeholder-foreground)', flexShrink: 0 }} />
                 <select
-                  className="bg-transparent border-0 outline-none cursor-pointer font-sans text-[11px]"
-                  style={{ color: tab.interceptRuleId ? 'var(--accent, #6366f1)' : 'var(--placeholder-foreground)' }}
+                  className="bg-transparent border-0 outline-none cursor-pointer font-sans text-[11px] min-w-0 truncate"
+                  style={{ color: tab.interceptRuleId ? 'var(--accent, #6366f1)' : 'var(--placeholder-foreground)', maxWidth: '100%' }}
                   value={tab.interceptRuleId ?? ''}
                   onChange={e => upd(tab.id, { interceptRuleId: e.target.value || undefined })}
                   title="Route request via an intercept rule"
@@ -2618,6 +2653,14 @@ function ExplorerPage() {
               {tab.loading
                 ? <><span className="spinner" style={{ width: 11, height: 11 }} /> Sending…</>
                 : <><Send size={12} /> Send</>}
+            </button>
+            {/* Ask AI */}
+            <button
+              title="Ask AI (contextual)"
+              onClick={() => window.dispatchEvent(new CustomEvent('open-ai-panel'))}
+              className="flex items-center justify-center w-[30px] h-[30px] rounded-md border border-[var(--border)] bg-transparent text-[var(--accent)] hover:bg-[color-mix(in_srgb,var(--accent)_8%,transparent)] hover:border-[color-mix(in_srgb,var(--accent)_40%,transparent)] flex-shrink-0 transition-colors cursor-pointer"
+            >
+              <Sparkles size={13} />
             </button>
             {/* ⋯ More actions */}
             <div className="relative flex-shrink-0">
@@ -2761,7 +2804,7 @@ function ExplorerPage() {
           </div>
 
           {/* ── Sub-tabs + destination info (inline right side) */}
-          <div className="sub-tab-bar flex-shrink-0 pl-2">
+          <div className="sub-tab-bar">
             {(['params', 'headers', ...(hasBody ? ['body'] : []), 'auth', 'cookies', 'payload', 'tests'] as ReqTab[]).map(v => {
               const badge = v === 'params' ? paramCount : v === 'headers' ? headerCount : 0;
               const dot = v === 'auth' && hasAuth;
@@ -2843,7 +2886,7 @@ function ExplorerPage() {
 
                 {reqTab === 'body' && hasBody && (
                   <div className="flex flex-col h-full">
-                    <div className="flex items-center gap-1 px-2 py-1.5 border-b border-[var(--border)] bg-[var(--card)] flex-shrink-0">
+                    <div className="flex items-center gap-1 px-2 h-[36px] border-b border-[var(--border)] bg-[var(--card)] flex-shrink-0">
                       {(['none', 'json', 'form', 'multipart', 'raw', 'binary'] as const).map(bt => (
                         <button key={bt}
                           className={cn('btn btn-ghost btn-sm text-[11.5px]', tab.bodyType === bt && 'bg-[color-mix(in_srgb,var(--foreground)_8%,transparent)] text-[var(--foreground)] border-[var(--border-strong)]')}
@@ -2924,6 +2967,14 @@ function ExplorerPage() {
 
       {/* ── Status bar */}
       <div className="status-bar">
+        <button
+          className={cn('status-bar-item', !endpointPanelOpen && 'text-[var(--accent)]')}
+          onClick={toggleEndpointPanel}
+          title={(endpointPanelOpen ? 'Hide' : 'Show') + ' endpoint panel'}
+        >
+          {endpointPanelOpen ? <PanelLeftClose size={11} /> : <PanelLeftOpen size={11} />}
+        </button>
+        <div className="status-bar-sep" />
         <button className="status-bar-item" onClick={() => setWsModalOpen(true)} title="Workspace settings">
           {activeWs?.color && <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: activeWs.color }} />}
           <span>{activeWs?.name ?? 'Personal'}</span>
@@ -2948,6 +2999,24 @@ function ExplorerPage() {
           </>
         )}
         <div className="flex-1 min-w-0" />
+        {/* Split layout toggle */}
+        <div className="flex items-center gap-px">
+          <button
+            className={cn('status-bar-item', splitDir === 'v' && 'text-[var(--accent)]')}
+            onClick={() => changeSplitDir('v')}
+            title="Vertical split (stacked)"
+          >
+            <Rows2 size={11} />
+          </button>
+          <button
+            className={cn('status-bar-item', splitDir === 'h' && 'text-[var(--accent)]')}
+            onClick={() => changeSplitDir('h')}
+            title="Horizontal split (side by side)"
+          >
+            <Columns2 size={11} />
+          </button>
+        </div>
+        <div className="status-bar-sep" />
         {operations.length > 0 && (
           <span className="status-bar-item" style={{ cursor: 'default' }}>{operations.length} endpoints</span>
         )}

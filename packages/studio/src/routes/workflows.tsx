@@ -22,7 +22,7 @@ import { cn } from '../lib/utils';
 import { Button } from '../components/ui/button';
 import {
   Workflow, Plus, Trash2, Play, Square, Sparkles, X,
-  Check, Loader2, AlertCircle, Zap,
+  Check, Loader2, AlertCircle, Zap, Bot,
 } from 'lucide-react';
 
 export const Route = createFileRoute('/workflows')({ component: WorkflowsPage });
@@ -181,7 +181,7 @@ function KVEditor({ data, onChange, vPlaceholder = 'value' }: {
       {entries.length > 0 && (
         <div className="rounded-md border border-[var(--border)] overflow-hidden">
           {entries.map(([k, v], idx) => (
-            <div key={idx} className={cn('flex items-stretch min-w-0', idx > 0 && 'border-t border-[var(--border)]')}>
+            <div key={k || idx} className={cn('flex items-stretch min-w-0', idx > 0 && 'border-t border-[var(--border)]')}>
               <input
                 className="w-[100px] shrink-0 border-r border-[var(--border)] bg-[var(--input-bg)] px-2.5 py-2 font-mono text-[11px] text-[var(--foreground)] outline-none focus:bg-[var(--elevated)] placeholder:text-[var(--placeholder-foreground)]"
                 value={k} placeholder="key"
@@ -854,6 +854,32 @@ function WorkflowsPage() {
     });
   }
 
+  // Keep AI panel context in sync
+  useEffect(() => {
+    if (!draft) return;
+    window.dispatchEvent(new CustomEvent('set-ai-context', {
+      detail: {
+        page: 'workflows',
+        workflowName: draft.name,
+        workflowSteps: JSON.stringify(draft.steps, null, 2),
+      },
+    }));
+  }, [draft?.name, draft?.steps]);
+
+  // Apply workflow steps from AI panel
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const json = (e as CustomEvent<string>).detail;
+      try {
+        const parsed = JSON.parse(json) as { name?: string; steps?: unknown[]; description?: string };
+        const steps = Array.isArray(parsed.steps) ? parsed.steps : Array.isArray(JSON.parse(json)) ? JSON.parse(json) : null;
+        if (steps) updateDraft({ steps: steps as WorkflowStep[], ...(parsed.name ? { name: parsed.name } : {}) });
+      } catch { /* not valid workflow JSON */ }
+    };
+    window.addEventListener('ai-apply-workflow', handler);
+    return () => window.removeEventListener('ai-apply-workflow', handler);
+  }, []);
+
   // Handle node drag end — save positions back to steps
   const handleNodesChange = useCallback((changes: NodeChange<Node<NodeData>>[]) => {
     onNodesChange(changes);
@@ -1158,6 +1184,14 @@ function WorkflowsPage() {
                 </span>
               )}
 
+              <button
+                type="button"
+                onClick={() => window.dispatchEvent(new CustomEvent('open-ai-panel'))}
+                title="Ask AI to build or refine this workflow"
+                className="flex items-center gap-1.5 rounded-lg border border-[color-mix(in_srgb,var(--accent)_30%,transparent)] bg-[color-mix(in_srgb,var(--accent)_6%,transparent)] px-3 py-1.5 text-[12px] text-[var(--accent)] hover:bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] transition-colors"
+              >
+                <Sparkles size={11} /> Ask AI
+              </button>
               {run.active ? (
                 <button type="button" onClick={stopRun}
                   className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--elevated)] px-3 py-1.5 text-[12px] text-[var(--foreground)] hover:bg-[var(--card)] transition-colors">

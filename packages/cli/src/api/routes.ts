@@ -839,7 +839,7 @@ async function openaiCompatibleLoop(
 // ─── Handler ─────────────────────────────────────────────────────────────────
 
 async function handleAiChat(req: Request): Promise<Response> {
-  let body: { messages: { role: string; content: string }[] };
+  let body: { messages: { role: string; content: string }[]; extra_context?: string };
   try { body = (await req.json()) as typeof body; } catch { return badRequest('Invalid JSON'); }
 
   const settingsRow = dbQueries.getSettings();
@@ -874,7 +874,7 @@ Authentication workflow: if requests return 401/403, call list_auth_profiles fir
 
 IMPORTANT: if an endpoint returns an error, diagnose it (check the schema, check auth) and fix the root cause before retrying. If the same endpoint fails 3 times the agent will be forcibly stopped. Do not retry without changing something.
 
-Be concise and practical. Format code and JSON in code blocks.`;
+Be concise and practical. Format code and JSON in code blocks.${body.extra_context ? `\n\n---\n## Current context\n${body.extra_context}` : ''}`;
 
   const provider = ai.provider ?? 'anthropic';
   const requiresKey = provider !== 'ollama' && provider !== 'custom';
@@ -1455,7 +1455,7 @@ Rules:
       const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': ai.apiKey!, 'anthropic-version': '2023-06-01' },
-        body: JSON.stringify({ model: ai.model || 'claude-haiku-4-5-20251001', max_tokens: 2048, system: systemMsg, messages: [{ role: 'user', content: userPrompt }] }),
+        body: JSON.stringify({ model: ai.model || 'claude-sonnet-4-6', max_tokens: 4096, system: systemMsg, messages: [{ role: 'user', content: userPrompt }] }),
       });
       if (!res.ok) throw new Error(`Anthropic: ${await res.text()}`);
       const d = await res.json() as { content: Array<{ type: string; text: string }> };

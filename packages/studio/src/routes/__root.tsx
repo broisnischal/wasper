@@ -3,6 +3,7 @@ import { useEffect, useState, useRef } from 'react';
 import { Sidebar } from '../components/Sidebar';
 import { CommandPalette } from '../components/CommandPalette';
 import { HotkeyHelp } from '../components/HotkeyHelp';
+import { AiPanel } from '../components/AiPanel';
 import { AppContext, DEFAULT_FEATURES, type Features } from '../context';
 import { apiClient, getCliUrl, setCliUrl, clearCliUrl, getCliToken, setCliToken, clearCliToken, LOG_WS_URL } from '../lib/api';
 import { injectFonts } from '../fonts';
@@ -37,7 +38,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
           } catch(e) {}
         ` }} />
       </head>
-      <body>
+      <body suppressHydrationWarning>
         {children}
         <Scripts />
       </body>
@@ -182,6 +183,7 @@ function AppShell() {
   const [operations, setOperations] = useState<ParsedOp[]>([]);
   const pendingOpRef = useRef<ParsedOp | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [aiPanelOpen, setAiPanelOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     try { return localStorage.getItem('sidebar_collapsed') === '1'; } catch { return false; }
   });
@@ -307,6 +309,13 @@ function AppShell() {
     return () => window.removeEventListener('open-hotkey-help', handler);
   }, []);
 
+  // AI panel open event
+  useEffect(() => {
+    const handler = () => setAiPanelOpen(true);
+    window.addEventListener('open-ai-panel', handler);
+    return () => window.removeEventListener('open-ai-panel', handler);
+  }, []);
+
   const handleCmdSelect = (op: ParsedOp) => {
     pendingOpRef.current = op;
     window.dispatchEvent(new CustomEvent('cmd-open-endpoint', { detail: op }));
@@ -353,6 +362,7 @@ function AppShell() {
       />
 
       <HotkeyHelp open={helpOpen} onClose={() => setHelpOpen(false)} />
+      <AiPanel open={aiPanelOpen} onClose={() => setAiPanelOpen(false)} />
     </>
   );
 

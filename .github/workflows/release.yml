@@ -4,12 +4,21 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Version tag (e.g. v0.2.0) — must match package.json version'
+        required: true
+        type: string
 
 permissions:
   contents: write
 
+env:
+  TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
 jobs:
-  build:
+  release:
     name: Build & publish
     runs-on: ubuntu-latest
 
@@ -39,26 +48,34 @@ jobs:
 
       - name: Publish to npm
         working-directory: packages/cli
-        run: npm publish --access=public
+        run: |
+          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" >> ~/.npmrc
+          bun publish
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Create GitHub Release & upload binaries
         uses: softprops/action-gh-release@v2
         with:
-          name: wasper ${{ github.ref_name }}
+          tag_name: ${{ env.TAG }}
+          name: wasper ${{ env.TAG }}
           body: |
-            ## wasper ${{ github.ref_name }}
+            ## wasper ${{ env.TAG }}
 
-            ### Install via npm / bun
+            ### One-line install (macOS / Linux)
             ```bash
-            npm install -g wasper-cli
-            # or
-            bunx wasper-cli --url <openapi-spec-url>
+            curl -fsSL https://studio.stroke.click/install.sh | sh
             ```
 
-            ### Standalone binaries (no Bun/Node required)
-            Download the binary for your platform below and run it directly.
+            ### Install via bun / npm
+            ```bash
+            bun add -g wasper-cli
+            # or
+            npm install -g wasper-cli
+            ```
+
+            ### Standalone binaries (no runtime required)
+            Download the binary for your platform below and place it in your `$PATH`.
 
             | Platform | File |
             |---|---|
@@ -67,6 +84,12 @@ jobs:
             | macOS x64 | `wasper-darwin-x64` |
             | macOS ARM64 (Apple Silicon) | `wasper-darwin-arm64` |
             | Windows x64 | `wasper-windows-x64.exe` |
+
+            ---
+            After installing, run:
+            ```bash
+            wasper --url https://petstore.swagger.io/v2/swagger.json
+            ```
           files: |
             packages/cli/dist/bin/wasper-linux-x64
             packages/cli/dist/bin/wasper-linux-arm64
@@ -74,4 +97,4 @@ jobs:
             packages/cli/dist/bin/wasper-darwin-arm64
             packages/cli/dist/bin/wasper-windows-x64.exe
           draft: false
-          prerelease: ${{ contains(github.ref_name, '-') }}
+          prerelease: ${{ contains(env.TAG, '-') }}
