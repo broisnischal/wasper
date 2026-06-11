@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Version tag (e.g. v0.2.0) — must match package.json version'
+        description: 'Version tag (e.g. v0.3.0) — must match package.json version'
         required: true
         type: string
 
@@ -90,40 +90,25 @@ jobs:
           path: packages/cli/dist/bin/${{ matrix.asset }}
           retention-days: 1
 
-# ── 2. Collect all binaries, publish npm, create GitHub Release ───────────────
+# ── 2. GitHub Release (binaries) then npm publish ─────────────────────────────
   release:
-    name: Publish & Release
+    name: Release & Publish
     needs: build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
-      - name: Install dependencies
-        working-directory: packages/cli
-        run: bun install --frozen-lockfile
-
-      - name: Build npm bundle
-        working-directory: packages/cli
-        run: bun run build && chmod +x dist/cli.js bin/wasper.js
-
-      - name: Publish to npm
-        working-directory: packages/cli
-        run: bun publish --access public
-        env:
-          BUN_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
+      # ── Download all platform binaries ──────────────────────────────────────
       - name: Download all binaries
         uses: actions/download-artifact@v4
         with:
           pattern: bin-*
           path: release-assets
           merge-multiple: true
+
+      - name: Make Unix binaries executable
+        run: chmod +x release-assets/wasper-linux-x64 release-assets/wasper-linux-arm64 release-assets/wasper-darwin-x64 release-assets/wasper-darwin-arm64
 
       - name: Generate SHA-256 checksums
         run: |
@@ -134,6 +119,7 @@ jobs:
           echo "--- checksums ---"
           cat checksums.txt
 
+      # ── Create GitHub Release with all binaries FIRST ───────────────────────
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -179,3 +165,29 @@ jobs:
             release-assets/checksums.txt
           draft: false
           prerelease: ${{ contains(env.TAG, '-') }}
+
+      # ── Build npm bundle then publish via npm (reliable auth) ───────────────
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        working-directory: packages/cli
+        run: bun install --frozen-lockfile
+
+      - name: Build npm bundle
+        working-directory: packages/cli
+        run: bun run build && chmod +x dist/cli.js bin/wasper.js
+
+      - name: Setup Node (for npm publish auth)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Publish to npm
+        working-directory: packages/cli
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
