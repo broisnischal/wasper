@@ -31,4 +31,5 @@ export async function run() {
 
   dbQueries.deleteSpec(id);
   console.log(`\n  ${paint.green('✓')}  Removed ${paint.dim(label ?? id)}\n`);
+  process.exit(0);
 }

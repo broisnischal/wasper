@@ -1,118 +1,112 @@
 # wasper-cli
 
-A local CLI proxy and AI agent for your OpenAPI specs. Explore, test, and automate any REST API without leaving your terminal.
+A local CLI daemon + MCP server + API proxy for your OpenAPI specs.
 
 ## Install
 
+**macOS / Linux**
 ```bash
-npm i -g wasper-cli
-# or
+curl -fsSL https://studio.stroke.click/install.sh | sh
+```
+
+**Windows** — open PowerShell:
+```powershell
+irm https://studio.stroke.click/install.ps1 | iex
+```
+
+**npm / Bun**
+```bash
+npm install -g wasper-cli
 bun add -g wasper-cli
 ```
 
 ## Quick start
 
 ```bash
-# Start with an OpenAPI spec URL
-wasper --url https://petstore3.swagger.io/api/v3/openapi.json
+# Start daemon in background (returns to your shell immediately)
+wasper up --url https://petstore.swagger.io/v2/swagger.json
 
-# Start in background
-wasper --url <spec-url> --background
+# Run a second instance on a different port
+wasper up --url https://api2.example.com/openapi.json --port 3389
 
-# Resume last used spec
-wasper
+# List all running instances
+wasper ps
 
-# List saved specs
-wasper ls
+# Check status
+wasper status
 
-# Switch to a saved spec (by number from `wasper ls`)
-wasper use 2
-
-# Remove a spec from history
-wasper rm 2
+# Stop all
+wasper down --all
 ```
 
-Then open [Wasper Studio](https://wasper.site) in your browser.
+## Commands
+
+### Daemon
+```
+wasper up [--url <spec>] [--port <port>]   Start daemon in background
+wasper down [--port <port>]                Stop one instance
+wasper down --all                          Stop all instances
+wasper ps                                  List all running instances
+wasper status [--port <port>]              Status of one or all
+wasper logs [-f] [--port <port>]           Tail server logs
+```
+
+### Spec
+```
+wasper spec <url> [--port <port>]          Load new spec on running daemon
+wasper reload [--port <port>]              Hot-reload current spec
+wasper ls                                  List saved spec history
+wasper use <n|url> [--port <port>]         Restart with a saved spec
+wasper rm  <n|url>                         Remove spec from history
+```
+
+### Features (toggle on the running daemon)
+```
+wasper mcp      [on|off] [--port <port>]
+wasper proxy    [on|off] [--port <port>]
+wasper ai       [on|off] [--port <port>]
+wasper readonly [on|off] [--port <port>]
+```
+
+### Auth
+```
+wasper auth                   List saved auth profiles
+wasper auth use <name>        Switch active profile
+wasper auth none              Disable auth
+```
+
+### System service
+```
+wasper service install [--port <port>] [--url <spec>]
+wasper service uninstall
+wasper service start | stop | status | logs
+```
+
+### Other
+```
+wasper update          Update to latest version
+wasper help            Full command reference
+wasper --version       Print version
+```
 
 ## Options
 
-```
-wasper [--url <spec>] [--port 3388]   Start in foreground
-wasper start --background             Start in background
-wasper stop                           Stop background server
-wasper status                         Show server status
-wasper reload                         Hot-reload the spec
-wasper ls                             List saved specs
-wasper use <number|url>               Start with a saved spec
-wasper rm  <number|url>               Remove a spec from history
+| Flag | Env var | Default |
+|---|---|---|
+| `--url` | `WASPER_SPEC_URL` | — |
+| `--port` | `WASPER_PORT` | `3388` |
+| `--host` | `WASPER_HOST` | `0.0.0.0` |
+| `--origin` | `WASPER_ORIGIN` | — |
+| `--token` | `WASPER_TOKEN` | — |
+| `--no-mcp` | — | MCP on |
+| `--no-proxy` | — | proxy on |
+| `--no-ai` | — | AI on |
+| `--readonly` | — | off |
 
---url, -u        OpenAPI spec URL or local file path
---port           Port to listen on (default: 3388, env: WASPER_PORT)
---host           Bind address (default: 0.0.0.0, env: WASPER_HOST)
---origin         Public URL (env: WASPER_ORIGIN) — for self-hosting
---token          Require bearer token on every request (env: WASPER_TOKEN)
---no-mcp         Disable MCP endpoint
---no-proxy       Disable HTTP proxy
---no-ai          Disable AI chat endpoint
---readonly       Block all non-GET upstream requests
---background,-b  Start detached in background
-```
-
-## Authentication
-
-wasper supports multiple auth schemes — configure them in Wasper Studio under **Authentication**:
-
-| Type | Description |
-|------|-------------|
-| Bearer | Static bearer token |
-| Basic | Username + password |
-| API Key | Header, query param, or cookie |
-| OAuth2 Client Credentials | Server-side token fetch with caching |
-| OIDC | OpenID Connect discovery |
-| Custom Headers | Any key/value headers |
-
-Profiles let you save multiple auth configurations and switch between them with:
+## Foreground / REPL mode
 
 ```bash
-# In the interactive REPL
-/auth use <profile-name>
+wasper start --url <spec>   # interactive REPL with slash commands
 ```
 
-## Self-hosting
-
-Run wasper on a remote server and connect your studio to it:
-
-```bash
-wasper --url <spec> --origin https://api.example.com --token <secret> --background
-```
-
-Then in the studio, click **Change CLI URL** and enter `https://api.example.com` with the token.
-
-## AI Agent
-
-The AI chat (`/ai` in the studio, or the `wasper` MCP server) uses the spec to answer questions, search endpoints, and execute API calls on your behalf.
-
-Add wasper as an MCP server in Claude Code:
-
-```bash
-claude mcp add wasper -- wasper --port 3388
-```
-
-## Environment variables
-
-| Variable | Description |
-|----------|-------------|
-| `WASPER_PORT` | Server port (default: 3388) |
-| `WASPER_HOST` | Bind address (default: 0.0.0.0) |
-| `WASPER_ORIGIN` | Public URL for self-hosted deployments |
-| `WASPER_TOKEN` | Access token gate |
-| `WASPER_SPEC_URL` | Default spec URL |
-| `WASPER_DATA_DIR` | Override data directory (default: ~/.wasper/data) |
-
-## Data
-
-wasper stores its database at `~/.wasper/data/wasper.db`. This includes request logs, saved specs, auth profiles, and settings. If you have an existing `~/.openapi-agent/data` directory, wasper will use it automatically.
-
-## License
-
-MIT — see [LICENSE](./LICENSE).
+Press `/` and type: `/mcp on|off` · `/proxy on|off` · `/auth use <role>` · `/token new` · `/tail` · `/help`

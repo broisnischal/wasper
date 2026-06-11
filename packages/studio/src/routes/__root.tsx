@@ -4,7 +4,8 @@ import { Sidebar } from '../components/Sidebar';
 import { CommandPalette } from '../components/CommandPalette';
 import { HotkeyHelp } from '../components/HotkeyHelp';
 import { AiPanel } from '../components/AiPanel';
-import { AppContext, DEFAULT_FEATURES, type Features } from '../context';
+import { AppContext, DEFAULT_FEATURES, type Features, useApp } from '../context';
+import { Sun, Moon } from 'lucide-react';
 import { apiClient, getCliUrl, setCliUrl, clearCliUrl, getCliToken, setCliToken, clearCliToken, LOG_WS_URL } from '../lib/api';
 import { injectFonts } from '../fonts';
 import {
@@ -165,6 +166,7 @@ const STEP_DOT_STYLE: React.CSSProperties = {
 };
 
 function OfflineCard() {
+  const { theme, toggleTheme } = useApp();
   const currentUrl = getCliUrl();
   const [urlInput, setUrlInput] = useState(currentUrl);
   const [tokenInput, setTokenInput] = useState(getCliToken() ?? '');
@@ -193,6 +195,27 @@ function OfflineCard() {
 
   return (
     <div className="offline-overlay">
+      <button
+        onClick={toggleTheme}
+        title={`${theme === 'dark' ? 'Light' : 'Dark'} mode`}
+        style={{
+          position: 'fixed', top: 16, right: 16,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          width: 32, height: 32, borderRadius: 8, border: 0,
+          background: 'transparent', color: 'var(--muted-foreground)',
+          cursor: 'pointer', transition: 'color 0.15s, background 0.15s',
+        }}
+        onMouseEnter={e => {
+          (e.currentTarget as HTMLButtonElement).style.color = 'var(--foreground)';
+          (e.currentTarget as HTMLButtonElement).style.background = 'color-mix(in srgb, var(--foreground) 7%, transparent)';
+        }}
+        onMouseLeave={e => {
+          (e.currentTarget as HTMLButtonElement).style.color = 'var(--muted-foreground)';
+          (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
+        }}
+      >
+        {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
+      </button>
       <div style={{ maxWidth: 600, width: '100%' }}>
 
         {/* Logo + Title */}

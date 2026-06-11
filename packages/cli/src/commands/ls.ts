@@ -42,4 +42,5 @@ export async function run() {
   console.log(paint.dim(`  wasper use <number>  — start server with that spec`));
   console.log(paint.dim(`  wasper rm  <number>  — remove a spec from history`));
   console.log();
+  process.exit(0);
 }

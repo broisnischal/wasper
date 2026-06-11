@@ -27,13 +27,18 @@ case "$OS" in
   Darwin) OS_KEY="darwin" ;;
   Linux)  OS_KEY="linux"  ;;
   *)
-    echo "  $(red '✗') Unsupported OS: $OS"
+    echo "  $(red '✗') This script is for macOS/Linux."
     echo ""
-    echo "  On Windows, download the binary directly from:"
-    echo "  $(cyan "https://github.com/${REPO}/releases")"
+    echo "  On Windows, open PowerShell and run:"
     echo ""
-    echo "  Or install via bun (requires bun runtime):"
-    echo "  $(dim 'bun add -g wasper-cli')"
+    echo "  $(cyan 'irm https://studio.stroke.click/install.ps1 | iex')"
+    echo ""
+    echo "  Or install via npm (requires Node.js):"
+    echo "  $(dim 'npm install -g wasper-cli')"
+    echo ""
+    echo "  Or download the .exe directly:"
+    echo "  $(dim "https://github.com/${REPO}/releases")"
+    echo ""
     exit 1
     ;;
 esac

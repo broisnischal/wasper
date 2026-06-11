@@ -238,7 +238,7 @@ export async function run(overrideOpts?: StartOptions) {
   // ── Graceful shutdown ─────────────────────────────────────────────────────
   function shutdown(sig?: string) {
     if (sig && !isDaemon) process.stdout.write(`\n  ${paint.dim('shutting down')}\n\n`);
-    clearDaemonState().finally(() => {
+    clearDaemonState(PORT).finally(() => {
       db.close();
       server.stop();
       process.exit(0);
@@ -565,16 +565,19 @@ function printInteractiveHelp() {
 
 function printHelp() {
   console.log(`
-Usage: wasper [start] [options]
+Usage: wasper start [options]
 
-  wasper [--url <spec-url>] [--port <port>]    Start in foreground (auto-resumes last spec)
-  wasper start --background                   Start in background
-  wasper stop                                 Stop background server
-  wasper status                               Show server status
+  Starts wasper in the foreground with an interactive REPL.
+  For background (daemon) mode — the default — use: wasper up
+
+  wasper up [--url <spec>]                    Start daemon in background (default)
+  wasper start [--url <spec>]                 Start in foreground with REPL
+  wasper down                                 Stop the daemon
+  wasper status                               Show daemon status
+  wasper logs [-f]                            Tail server logs
+  wasper service install                      Install as system service (auto-start)
   wasper reload                               Hot-reload the spec
   wasper ls                                   List saved specs (history)
-  wasper use <number|url>                     Start with a saved spec
-  wasper rm  <number|url>                     Remove a spec from history
 
 Options:
   --url, -u        OpenAPI spec URL or local path
@@ -589,17 +592,17 @@ Options:
   --no-proxy       Start with the HTTP proxy disabled
   --no-ai          Start with the AI chat endpoint disabled
   --readonly       Block all non-GET upstream requests (agent guardrail)
-  --background, -b Start detached in background
+  --background, -b Start detached in background (same as wasper up)
   --daemon, -d     Same as --background
   -h, --help       Show this help
 
-Interactive mode supports slash commands — press / and type:
+Interactive REPL slash commands (foreground mode):
   /mcp on|off · /proxy on|off · /ai on|off · /readonly on|off
   /auth use <role> · /token new · /spec <url> · /tail · /help
 
 Self-hosting:
-  wasper start --url <spec> --origin https://api.example.com --token <secret> -b
-  Then open the studio with ?server=https://api.example.com&token=<secret>
+  wasper up --url <spec> --origin https://api.example.com --token <secret>
+  wasper service install --url <spec> --port 3388
 `);
 }
 

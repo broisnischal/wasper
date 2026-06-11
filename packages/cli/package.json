@@ -1,6 +1,6 @@
 {
   "name": "wasper-cli",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Host an MCP server + API proxy from any OpenAPI spec. Like Drizzle Studio, but for APIs.",
   "type": "module",
   "homepage": "https://wasper.site",

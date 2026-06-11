@@ -27,6 +27,7 @@ export async function run() {
 
     spinner.stop('✓', `Reloaded "${data.spec}" · ${paint.green(String(data.endpoints ?? 0) + ' endpoints')}`, 'green');
     console.log();
+    process.exit(0);
   } catch (e) {
     spinner.stop('✗', `Failed: ${e instanceof Error ? e.message : String(e)}`, 'red');
     process.exit(1);
