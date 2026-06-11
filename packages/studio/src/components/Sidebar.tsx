@@ -108,7 +108,7 @@ export function Sidebar() {
         </div>
         {!collapsed && (
           <span className="ml-2.5 text-[13.5px] font-semibold text-[var(--foreground)] truncate flex-1 leading-none">
-            {status?.spec.title ?? 'Wasper Studio'}
+            {status?.spec?.title ?? 'Wasper Studio'}
           </span>
         )}
       </div>
