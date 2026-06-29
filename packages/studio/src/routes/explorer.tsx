@@ -2838,14 +2838,14 @@ function ExplorerPage() {
           <div className="flex items-center gap-1.5 px-2.5 py-1.5 border-b border-[var(--border)] bg-[var(--background)] flex-shrink-0">
             {/* Unified method + URL container */}
             <div
-              className="flex items-center flex-1 min-w-0 rounded-md overflow-hidden transition-colors"
+              className="flex items-center flex-1 min-w-0 rounded-lg overflow-hidden transition-all"
               style={{
                 border: '1px solid var(--border)',
                 background: 'var(--input-bg)',
-                height: 32,
+                height: 36,
               }}
-              onFocusCapture={e => (e.currentTarget.style.borderColor = 'var(--border-focus)')}
-              onBlurCapture={e => (e.currentTarget.style.borderColor = 'var(--border)')}
+              onFocusCapture={e => { e.currentTarget.style.borderColor = 'var(--brand)'; e.currentTarget.style.boxShadow = '0 0 0 3px var(--brand-ring)'; }}
+              onBlurCapture={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.boxShadow = 'none'; }}
             >
               {/* Method select */}
               <Select value={tab.method} onValueChange={v => upd(tab.id, { method: v })}>
@@ -2877,8 +2877,8 @@ function ExplorerPage() {
                   height: '100%',
                   background: 'transparent',
                   border: 'none',
-                  padding: '0 11px',
-                  fontSize: 12.5,
+                  padding: '0 12px',
+                  fontSize: 13,
                   fontFamily: 'GeistMono, ui-monospace, monospace',
                   color: 'var(--foreground)',
                   outline: 'none',
@@ -2897,9 +2897,9 @@ function ExplorerPage() {
             {/* Intercept rule selector */}
             {interceptRules.length > 0 && (
               <div
-                className="flex items-center gap-1 flex-shrink-0 px-2 rounded-md border transition-colors"
+                className="flex items-center gap-1 flex-shrink-0 px-2.5 rounded-lg border transition-colors"
                 style={{
-                  height: 32,
+                  height: 36,
                   maxWidth: tab.interceptRuleId ? 140 : 88,
                   borderColor: tab.interceptRuleId ? 'var(--brand)' : 'var(--border)',
                   background: tab.interceptRuleId ? 'color-mix(in srgb,var(--brand) 8%,transparent)' : 'var(--input-bg)',

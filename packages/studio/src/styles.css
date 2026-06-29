@@ -480,6 +480,18 @@
     padding: clamp(60px, 18vh, 140px) 20px 80px;
   }
 
+  /* Boot / connecting screen — expanding pulse rings behind the logo */
+  .boot-ring {
+    position: absolute; width: 56px; height: 56px; border-radius: 16px;
+    border: 1px solid color-mix(in srgb, var(--foreground) 22%, transparent);
+    animation: boot-pulse 2s cubic-bezier(0.2,0.6,0.3,1) infinite;
+  }
+  .boot-ring-2 { animation-delay: 1s; }
+  @keyframes boot-pulse {
+    0%   { transform: scale(0.92); opacity: 0.55; }
+    100% { transform: scale(1.7); opacity: 0; }
+  }
+
   .connecting-dots { display: inline-flex; align-items: center; gap: 4px; }
   .connecting-dots span {
     width: 4.5px; height: 4.5px; border-radius: 50%;
@@ -548,23 +560,36 @@
   .ep-row.active .ep-path { color: var(--foreground); }
   .ep-row:hover .ep-path { color: var(--foreground-secondary); }
 
-  /* ── JSON tree ────────────────────────────────── */
-  .jt-row { display: flex; align-items: center; white-space: pre; min-width: max-content; }
-  .jt-clickable { cursor: pointer; border-radius: 3px; }
-  .jt-clickable:hover { background: color-mix(in srgb, var(--foreground) 5%, transparent); }
-  .jt-caret { display: inline-flex; align-items: center; justify-content: center; width: 14px; flex-shrink: 0; color: var(--placeholder-foreground); }
+  /* ── JSON tree (Insomnia-style with indent guides) ─────────────── */
+  .jt-scroll { padding-left: 4px; padding-right: 12px; }
+  .jt-row {
+    display: flex; align-items: stretch; white-space: pre; min-width: max-content;
+    min-height: 20px; padding: 0 6px 0 4px; border-radius: 5px;
+  }
+  .jt-row > :not(.jt-guides) { align-self: center; }
+  .jt-clickable { cursor: pointer; }
+  .jt-clickable:hover { background: color-mix(in srgb, var(--foreground) 4%, transparent); }
+
+  /* indent guides — one faint vertical rule per nesting level */
+  .jt-guides { display: inline-flex; align-self: stretch; flex-shrink: 0; }
+  .jt-guide { width: 14px; flex-shrink: 0; border-left: 1px solid color-mix(in srgb, var(--foreground) 8%, transparent); }
+  .jt-clickable:hover .jt-guide { border-left-color: color-mix(in srgb, var(--foreground) 14%, transparent); }
+
+  .jt-caret { display: inline-flex; align-items: center; justify-content: center; width: 14px; flex-shrink: 0; color: var(--muted-foreground); }
+  .jt-caret svg { transition: transform 0.12s ease; }
+  .jt-caret-open svg { transform: rotate(90deg); }
   .jt-caret-space { display: inline-block; width: 14px; flex-shrink: 0; }
+
   .jt-count {
-    margin-left: 8px; font-size: 10.5px; color: var(--placeholder-foreground);
-    background: var(--elevated); border: 1px solid var(--border);
-    border-radius: 4px; padding: 0 5px; line-height: 1.5;
+    margin: 0 6px; font-size: 11px; font-style: normal;
+    color: color-mix(in srgb, var(--muted-foreground) 75%, transparent);
   }
   .jt-more {
-    background: var(--elevated); border: 1px solid var(--border); border-radius: 4px;
-    color: var(--muted-foreground); font-size: 10.5px; font-family: inherit;
-    padding: 1px 7px; cursor: pointer;
+    background: transparent; border: 1px dashed var(--border); border-radius: 5px;
+    color: var(--muted-foreground); font-size: 11px; font-family: inherit;
+    padding: 1px 8px; cursor: pointer; transition: color 0.1s, border-color 0.1s;
   }
-  .jt-more:hover { color: var(--brand); }
+  .jt-more:hover { color: var(--brand); border-color: var(--brand); }
 
   :root {
     --json-key: #7dd3fc; --json-string: #86efac; --json-number: #fde68a; --json-bool: #c4b5fd;

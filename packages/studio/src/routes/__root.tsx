@@ -652,16 +652,20 @@ function AppShell() {
   // Loading state: null = still checking (skip for public routes)
   if (connected === null && !isPublic) {
     return (
-      <div className="flex h-screen flex-col items-center justify-center bg-[var(--background)]" style={{ animation: 'fade-in 0.2s ease' }}>
-        <div className="flex flex-col items-center gap-5 text-center">
-          <div className="flex size-12 items-center justify-center rounded-2xl bg-[var(--foreground)]">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--background)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" />
-            </svg>
+      <div className="flex h-screen flex-col items-center justify-center bg-background" style={{ animation: 'fade-in 0.2s ease' }}>
+        <div className="flex flex-col items-center gap-7 text-center">
+          <div className="relative flex items-center justify-center">
+            <span className="boot-ring" aria-hidden="true" />
+            <span className="boot-ring boot-ring-2" aria-hidden="true" />
+            <div className="relative flex size-14 items-center justify-center rounded-2xl bg-foreground text-background shadow-xl">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" />
+              </svg>
+            </div>
           </div>
-          <div>
-            <div className="text-[18px] font-bold tracking-tight text-[var(--foreground)]">Wasper Studio</div>
-            <div className="mt-2.5 flex items-center justify-center gap-2 text-[13px] text-[var(--muted-foreground)]">
+          <div className="flex flex-col items-center gap-2.5">
+            <div className="text-[19px] font-semibold tracking-tight text-foreground">Wasper Studio</div>
+            <div className="flex items-center gap-2 text-[13px] text-muted-foreground">
               Connecting to CLI
               <span className="connecting-dots"><span /><span /><span /></span>
             </div>
