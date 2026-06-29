@@ -651,10 +651,10 @@ async function executeTool(
     let authConfig: Record<string, string>;
     let type: string;
     if (tokenType === 'apikey_header') {
-      authConfig = { type: 'apikey_header', header: headerName, value: token };
+      authConfig = { type: 'apikey_header', headerName, apiKey: token };
       type = 'apikey_header';
     } else if (tokenType === 'apikey_query') {
-      authConfig = { type: 'apikey_query', param: headerName, value: token };
+      authConfig = { type: 'apikey_query', queryParam: headerName, apiKey: token };
       type = 'apikey_query';
     } else {
       authConfig = { type: 'bearer', token };

@@ -8,6 +8,7 @@ import { JsonViewer } from '../components/JsonViewer';
 import { JsonTree } from '../components/JsonTree';
 import { SuggestInput } from '../components/SuggestInput';
 import { CodeModal } from '../components/CodeModal';
+import { CodeEditor, type CodeEditorHandle } from '../components/CodeEditor';
 import { COMMON_HEADERS, HEADER_VALUE_SUGGESTIONS, RAW_BODY_TYPES, jqFilter, generateJsonSchema } from '../lib/http';
 import type { CodeRequest } from '../lib/codegen';
 import { cn } from '../lib/utils';
@@ -524,123 +525,36 @@ function FormDataTable({ rows, onChange, allowFiles }: {
 }
 
 // ── JSON Editor ─────────────────────────────────────────────────────────────
-// Synchronous tokenizer — no async, no debounce, no flash.
-// Uses existing .json-key / .json-str / .json-num / .json-bool / .json-null
-// CSS classes so colors follow the active theme automatically.
-function highlightJson(src: string): string {
-  if (!src.trim()) return '';
-  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  // Groups: string · number · keyword · punctuation · whitespace · other
-  const TOKEN = /("(?:[^"\\]|\\.)*"?)|(-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?)|(true|false|null)|([{}\[\],:])|(\s+)|(.)/g;
-  const stack: ('obj' | 'arr')[] = [];
-  let expectKey = false;
-  let out = '';
-  let m: RegExpExecArray | null;
-  while ((m = TOKEN.exec(src)) !== null) {
-    const [, str, num, kw, punc, ws, other] = m;
-    if (ws !== undefined) {
-      out += esc(ws);
-    } else if (str !== undefined) {
-      out += `<span class="${expectKey ? 'json-key' : 'json-str'}">${esc(str)}</span>`;
-      if (expectKey) expectKey = false;
-    } else if (num !== undefined) {
-      out += `<span class="json-num">${esc(num)}</span>`;
-    } else if (kw !== undefined) {
-      out += `<span class="${kw === 'null' ? 'json-null' : 'json-bool'}">${esc(kw)}</span>`;
-    } else if (punc !== undefined) {
-      out += esc(punc);
-      if (punc === '{') { stack.push('obj'); expectKey = true; }
-      else if (punc === '[') { stack.push('arr'); expectKey = false; }
-      else if (punc === '}' || punc === ']') { stack.pop(); expectKey = false; }
-      else if (punc === ':') { expectKey = false; }
-      else if (punc === ',') { expectKey = stack[stack.length - 1] === 'obj'; }
-    } else if (other !== undefined) {
-      out += `<span style="color:var(--destructive)">${esc(other)}</span>`;
-    }
-  }
-  return out;
+// Map a raw-body MIME type to a Monaco language id (Monaco uses 'plaintext').
+function rawMimeToLang(mime: string): string {
+  const lang = RAW_BODY_TYPES.find(rt => rt.mime === mime)?.lang ?? 'text';
+  return lang === 'text' ? 'plaintext' : lang;
 }
 
-const JSON_PRE_STYLE = "margin:0;padding:12px 16px;font-family:'JetBrains Mono',GeistMono,ui-monospace,monospace;font-size:12.5px;line-height:1.65;white-space:pre-wrap;word-break:break-all;overflow:auto;color:var(--foreground)";
-
-const JsonEditor = React.memo(function JsonEditor({ value, onChange, placeholder }: {
-  value: string; onChange: (v: string) => void; placeholder?: string;
+const JsonEditor = React.memo(function JsonEditor({ value, onChange, placeholder, schema, path }: {
+  value: string; onChange: (v: string) => void; placeholder?: string; schema?: object; path?: string;
 }) {
-  const [local, setLocal] = useState(value);
-  const taRef = useRef<HTMLTextAreaElement>(null);
-  const hlRef = useRef<HTMLDivElement>(null);
-  const onChangeRef = useRef(onChange);
-  onChangeRef.current = onChange;
+  const editorRef = useRef<CodeEditorHandle>(null);
 
-  // sync from parent only when value changes from outside (e.g. loading an endpoint)
-  const prevValue = useRef(value);
-  if (value !== prevValue.current && value !== local) {
-    prevValue.current = value;
-    setLocal(value);
-  }
-
-  // Synchronous highlight — always current, no debounce, no flash
-  const highlighted = useMemo(() => highlightJson(local), [local]);
-
-  const syncScroll = () => {
-    if (taRef.current && hlRef.current) {
-      const pre = hlRef.current.querySelector('pre');
-      if (pre) { pre.scrollTop = taRef.current.scrollTop; pre.scrollLeft = taRef.current.scrollLeft; }
-    }
-  };
-
-  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const v = e.target.value;
-    setLocal(v);
-    onChangeRef.current(v);
-  };
-
-  const format = () => {
-    try {
-      const fmt = JSON.stringify(JSON.parse(local), null, 2);
-      setLocal(fmt);
-      onChangeRef.current(fmt);
-    } catch { /**/ }
-  };
-
-  const escPh = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const format = () => editorRef.current?.format();
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-[var(--border)] bg-[var(--card)] flex-shrink-0">
-        <span className="text-[11px] text-[var(--placeholder-foreground)] font-mono">JSON</span>
-        <button className="btn btn-ghost btn-sm text-[11px] ml-auto h-6 px-2" onClick={format}>Format</button>
+      <div className="flex items-center gap-2 px-3 h-[34px] border-b border-[var(--border)] bg-[var(--card)] flex-shrink-0">
+        <FileJson size={12} className="text-[var(--muted-foreground)]" />
+        <span className="text-[11px] text-[var(--muted-foreground)] font-medium">JSON</span>
+        {schema && (
+          <span className="flex items-center gap-1 text-[10.5px] text-[var(--muted-foreground)] opacity-70" title="Autocomplete & validation from this endpoint's schema">
+            <Sparkles size={9} className="text-[var(--accent)]" />
+            schema
+          </span>
+        )}
+        <button className="btn btn-ghost btn-sm text-[11px] ml-auto h-6 px-2 gap-1" onClick={format}>
+          <AlignLeft size={11} /> Format
+        </button>
       </div>
       <div className="relative flex-1 overflow-hidden">
-        <div
-          ref={hlRef}
-          className="pointer-events-none absolute inset-0 overflow-hidden flex flex-col"
-          dangerouslySetInnerHTML={{
-            __html: highlighted
-              ? `<pre style="${JSON_PRE_STYLE}">${highlighted}</pre>`
-              : `<pre style="${JSON_PRE_STYLE};color:var(--placeholder-foreground)">${escPh(placeholder ?? '')}</pre>`,
-          }}
-        />
-        <textarea
-          ref={taRef}
-          value={local}
-          onChange={handleChange}
-          onScroll={syncScroll}
-          spellCheck={false}
-          style={{
-            position: 'absolute', inset: 0, width: '100%', height: '100%',
-            background: 'transparent',
-            color: 'transparent',
-            caretColor: 'var(--foreground)',
-            border: 'none', outline: 'none', resize: 'none',
-            padding: '12px 16px',
-            fontFamily: "'JetBrains Mono', GeistMono, ui-monospace, monospace",
-            fontSize: 12.5, lineHeight: 1.65,
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-all',
-            zIndex: 1,
-          }}
-        />
+        <CodeEditor ref={editorRef} value={value} onChange={onChange} language="json" placeholder={placeholder} schema={schema} path={path} />
       </div>
     </div>
   );
@@ -1874,14 +1788,9 @@ function TestsPanel({ code, onChange, results }: { code: string; onChange: (v: s
         </div>
       </div>
       <div className="flex-1 min-h-0 flex flex-col">
-        <textarea
-          className="flex-1 w-full font-mono text-[12px] resize-none border-0 outline-none p-3 leading-relaxed"
-          style={{ background: 'var(--background)', color: 'var(--foreground)', caretColor: 'var(--foreground)' }}
-          placeholder={TESTS_PLACEHOLDER}
-          value={code}
-          onChange={e => onChange(e.target.value)}
-          spellCheck={false}
-        />
+        <div className="relative flex-1 overflow-hidden">
+          <CodeEditor value={code} onChange={onChange} language="javascript" placeholder={TESTS_PLACEHOLDER} />
+        </div>
         {results !== null && results.length > 0 && (
           <div className="border-t border-[var(--border)] bg-[var(--card)] flex-shrink-0 max-h-[160px] overflow-y-auto">
             {results.map((r, i) => (
@@ -2486,6 +2395,13 @@ function ExplorerPage() {
   const activeEnv = effectiveEnv(tab, activeWs, envs, globalEnv);
   const domain = urlDomain(resolveVars(replacePaths(tab.url, tab.pathParams), activeEnv));
   const hasBody = !['GET', 'HEAD', 'OPTIONS'].includes(tab.method);
+  // Request-body JSON schema for the active endpoint → drives Monaco completions.
+  const bodySchema = useMemo(() => {
+    if (!tab.operationId) return undefined;
+    const op = operations.find(o => o.operationId === tab.operationId);
+    const s = op?.requestBody?.schema;
+    return s && typeof s === 'object' && Object.keys(s).length ? s : undefined;
+  }, [tab.operationId, operations]);
   const hasPathParams = tab.pathParams.length > 0;
   const resolvedAuthType = effectiveAuth(tab, activeWs).type;
   const hasAuth = resolvedAuthType !== 'cli' && resolvedAuthType !== 'none';
@@ -3085,7 +3001,7 @@ function ExplorerPage() {
                       )}
                     </div>
                     {tab.bodyType === 'none' && <div className="empty-state text-[12px]">No body</div>}
-                    {tab.bodyType === 'json' && <JsonEditor value={tab.body} onChange={v => upd(tab.id, { body: v })} placeholder={'{\n  "key": "value"\n}'} />}
+                    {tab.bodyType === 'json' && <JsonEditor value={tab.body} onChange={v => upd(tab.id, { body: v })} placeholder={'{\n  "key": "value"\n}'} schema={bodySchema} path={`body-${tab.id}.json`} />}
                     {tab.bodyType === 'form' && (
                       <div className="p-3 flex flex-col gap-3">
                         <FormDataTable rows={tab.formRows} onChange={rows => upd(tab.id, { formRows: rows })} allowFiles={false} />
@@ -3099,7 +3015,9 @@ function ExplorerPage() {
                       </div>
                     )}
                     {tab.bodyType === 'raw' && (
-                      <textarea className="textarea flex-1 rounded-none border-0 resize-none text-[12px] font-mono" placeholder={`Request body… (${tab.rawType})`} value={tab.body} onChange={e => upd(tab.id, { body: e.target.value })} />
+                      <div className="relative flex-1 overflow-hidden">
+                        <CodeEditor value={tab.body} onChange={v => upd(tab.id, { body: v })} language={rawMimeToLang(tab.rawType)} placeholder={`Request body… (${tab.rawType})`} />
+                      </div>
                     )}
                     {tab.bodyType === 'binary' && (
                       <div className="p-4 flex flex-col gap-3 items-start">

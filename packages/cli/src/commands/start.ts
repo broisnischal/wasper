@@ -17,6 +17,22 @@ import { Spinner, printBanner, paint, isTTY } from '../ui';
 import { Repl } from '../repl';
 import { persistAndBroadcastFeatures } from '../api/routes';
 
+/**
+ * CORS headers for daemon responses. Reflects the caller's Origin (so a deployed
+ * studio on https://… can talk to this local daemon) and echoes the requested
+ * headers on preflight. The daemon authenticates via bearer token, not cookies,
+ * so credentialed CORS is unnecessary.
+ */
+export function corsHeaders(req: Request): Record<string, string> {
+  const origin = req.headers.get('Origin');
+  return {
+    'Access-Control-Allow-Origin': origin || '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': req.headers.get('Access-Control-Request-Headers') || 'Content-Type, Authorization',
+    'Vary': 'Origin',
+  };
+}
+
 export interface StartOptions {
   url?: string;
   port?: number;
@@ -97,6 +113,10 @@ export async function run(overrideOpts?: StartOptions) {
     readonly: !!values.readonly,
   });
 
+  // Heal any drift between the active profile and auth_config left by older
+  // builds, so requests use the active profile's current credentials.
+  dbQueries.reconcileActiveAuthConfig();
+
   // ── If --background: spawn detached child and exit ────────────────────────
   if (bgNow) {
     const pid = await spawnDaemon(specUrl, PORT, { host: HOST, origin: ORIGIN, token: TOKEN, features: getFeatures() });
@@ -146,18 +166,20 @@ export async function run(overrideOpts?: StartOptions) {
     idleTimeout: 0, // never timeout — required for long SSE (AI agentic loops)
 
     async fetch(req, srv) {
-      const CORS_HEADERS = {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-      };
+      const CORS_HEADERS = corsHeaders(req);
 
       try {
         const { pathname } = new URL(req.url);
 
-        // CORS preflight never carries credentials — answer before the auth gate
+        // CORS preflight never carries credentials — answer before the auth gate.
         if (req.method === 'OPTIONS') {
-          return new Response(null, { status: 204, headers: CORS_HEADERS });
+          const preflight: Record<string, string> = { ...CORS_HEADERS, 'Access-Control-Max-Age': '86400' };
+          // Private Network Access: a deployed (public, HTTPS) studio reaching this
+          // local daemon must get an explicit grant or Chrome/Edge block the request.
+          if (req.headers.get('Access-Control-Request-Private-Network') === 'true') {
+            preflight['Access-Control-Allow-Private-Network'] = 'true';
+          }
+          return new Response(null, { status: 204, headers: preflight });
         }
 
         // Capture bins are public — external clients have no token, the bin ID is the auth
