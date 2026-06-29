@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { OnMount, OnChange } from '@monaco-editor/react';
 import { useApp } from '../context';
 
@@ -101,6 +101,49 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
 
   const monacoTheme = theme === 'light' ? 'wasper-light' : 'wasper-dark';
 
+  // Memoized so a new object isn't created on every parent re-render — passing a
+  // fresh options object made @monaco-editor/react call editor.updateOptions() on
+  // every keystroke, which re-applied config and re-tokenized the view (the
+  // highlight "lag"/flicker). Only rebuild when something here actually changes.
+  const options = useMemo(() => ({
+    readOnly,
+    fontFamily: FONT,
+    fontSize: 12.5,
+    lineHeight: 20,
+    fontLigatures: true,
+    lineNumbers: (lineNumbers ? 'on' : 'off') as 'on' | 'off',
+    lineNumbersMinChars: 3,
+    lineDecorationsWidth: 8,
+    glyphMargin: false,
+    minimap: { enabled: false },
+    scrollBeyondLastLine: false,
+    renderLineHighlight: 'none' as const,
+    padding: { top: 10, bottom: 10 },
+    folding: true,
+    tabSize: 2,
+    automaticLayout: true,
+    formatOnPaste: true,
+    // Neutral braces that follow the theme delimiter color (no rainbow).
+    bracketPairColorization: { enabled: false },
+    guides: { bracketPairs: false, highlightActiveBracketPair: false, indentation: true },
+    matchBrackets: 'near' as const,
+    scrollbar: { verticalScrollbarSize: 8, horizontalScrollbarSize: 8, useShadows: false },
+    // Animations that add perceived input latency while typing — off for snappiness.
+    smoothScrolling: false,
+    cursorBlinking: 'blink' as const,
+    cursorSmoothCaretAnimation: 'off' as const,
+    overviewRulerLanes: 0,
+    hideCursorInOverviewRuler: true,
+    overviewRulerBorder: false,
+    renderWhitespace: 'none' as const,
+    stickyScroll: { enabled: false },
+    wordWrap: (language === 'json' ? 'off' : 'on') as 'on' | 'off',
+    fixedOverflowWidgets: true,
+    quickSuggestions: { other: true, comments: false, strings: true },
+    suggestOnTriggerCharacters: true,
+    tabCompletion: 'on' as const,
+  }), [readOnly, lineNumbers, language]);
+
   return (
     <div className="relative h-full w-full" style={{ background: 'var(--background)' }}>
       {ready ? (
@@ -112,43 +155,7 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
             theme={monacoTheme}
             onMount={handleMount}
             onChange={handleChange}
-            options={{
-              readOnly,
-              fontFamily: FONT,
-              fontSize: 12.5,
-              lineHeight: 20,
-              fontLigatures: true,
-              lineNumbers: lineNumbers ? 'on' : 'off',
-              lineNumbersMinChars: 3,
-              lineDecorationsWidth: 8,
-              glyphMargin: false,
-              minimap: { enabled: false },
-              scrollBeyondLastLine: false,
-              renderLineHighlight: 'none',
-              padding: { top: 10, bottom: 10 },
-              folding: true,
-              tabSize: 2,
-              automaticLayout: true,
-              formatOnPaste: true,
-              // Neutral braces that follow the theme delimiter color (no rainbow).
-              bracketPairColorization: { enabled: false },
-              guides: { bracketPairs: false, highlightActiveBracketPair: false, indentation: true },
-              matchBrackets: 'near',
-              scrollbar: { verticalScrollbarSize: 8, horizontalScrollbarSize: 8, useShadows: false },
-              smoothScrolling: true,
-              cursorBlinking: 'smooth',
-              cursorSmoothCaretAnimation: 'on',
-              overviewRulerLanes: 0,
-              hideCursorInOverviewRuler: true,
-              overviewRulerBorder: false,
-              renderWhitespace: 'none',
-              stickyScroll: { enabled: false },
-              wordWrap: language === 'json' ? 'off' : 'on',
-              fixedOverflowWidgets: true,
-              quickSuggestions: { other: true, comments: false, strings: true },
-              suggestOnTriggerCharacters: true,
-              tabCompletion: 'on',
-            }}
+            options={options}
           />
         </React.Suspense>
       ) : (
