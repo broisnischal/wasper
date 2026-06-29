@@ -40,13 +40,13 @@ function NavItem({ to, icon: Icon, label, exact, collapsed }: {
         to={to as '/'}
         title={label}
         className={cn(
-          'flex items-center justify-center w-9 h-9 mx-auto rounded-lg transition-colors duration-100 no-underline',
+          'flex items-center justify-center w-8 h-8 mx-auto rounded-md transition-colors duration-100 no-underline',
           active
-            ? 'text-[var(--foreground)] bg-[color-mix(in_srgb,var(--foreground)_10%,transparent)]'
+            ? 'text-[var(--foreground)] bg-[color-mix(in_srgb,var(--foreground)_9%,transparent)]'
             : 'text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[color-mix(in_srgb,var(--foreground)_5%,transparent)]',
         )}
       >
-        <Icon size={16} strokeWidth={active ? 2 : 1.6} className="flex-shrink-0" />
+        <Icon size={15} strokeWidth={active ? 2 : 1.75} className="flex-shrink-0" />
       </Link>
     );
   }
@@ -55,13 +55,17 @@ function NavItem({ to, icon: Icon, label, exact, collapsed }: {
     <Link
       to={to as '/'}
       className={cn(
-        'flex items-center gap-3 px-3 h-9 rounded-lg w-full text-[13.5px] tracking-tight transition-colors duration-100 no-underline',
+        'group relative flex items-center gap-2.5 pl-2.5 pr-3 h-[30px] rounded-[7px] w-full text-[12.5px] -tracking-[0.006em] transition-colors duration-100 no-underline',
         active
-          ? 'text-[var(--foreground)] font-medium bg-[color-mix(in_srgb,var(--foreground)_10%,transparent)]'
-          : 'text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[color-mix(in_srgb,var(--foreground)_5%,transparent)]',
+          ? 'text-[var(--foreground)] font-medium bg-[color-mix(in_srgb,var(--foreground)_8%,transparent)]'
+          : 'text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[color-mix(in_srgb,var(--foreground)_4.5%,transparent)]',
       )}
     >
-      <Icon size={16} strokeWidth={active ? 2 : 1.6} className="flex-shrink-0" />
+      <Icon
+        size={15}
+        strokeWidth={active ? 2 : 1.75}
+        className={cn('flex-shrink-0 transition-opacity', active ? 'opacity-100' : 'opacity-70 group-hover:opacity-100')}
+      />
       {label}
     </Link>
   );
@@ -88,7 +92,7 @@ export function Sidebar() {
   }, [connected]);
 
   const collapsed = sidebarCollapsed;
-  const w = collapsed ? 'w-[52px] min-w-[52px]' : 'w-[220px] min-w-[220px]';
+  const w = collapsed ? 'w-[48px] min-w-[48px]' : 'w-[208px] min-w-[208px]';
 
   return (
     <aside className={cn(
@@ -98,17 +102,20 @@ export function Sidebar() {
 
       {/* ── Header ── */}
       <div className={cn(
-        'flex items-center h-[52px] flex-shrink-0 px-3',
-        collapsed && 'justify-center px-2',
+        'flex items-center h-[46px] flex-shrink-0',
+        collapsed ? 'justify-center px-2' : 'px-3.5',
       )}>
-        <div
-          className="w-7 h-7 rounded-lg flex-shrink-0 flex items-center justify-center text-[12px] font-bold text-white select-none"
-          style={{ background: connected ? '#3b82f6' : '#52525b' }}
-        >
-          W
-        </div>
-        {!collapsed && (
-          <span className="ml-2.5 text-[13.5px] font-semibold text-[var(--foreground)] truncate flex-1 leading-none">
+        {collapsed ? (
+          <span
+            className="w-2 h-2 rounded-full flex-shrink-0"
+            style={{
+              background: connected ? 'var(--success)' : 'var(--muted-foreground)',
+              boxShadow: connected ? '0 0 5px color-mix(in srgb, var(--success) 60%, transparent)' : 'none',
+            }}
+            title={connected ? 'Connected' : 'Disconnected'}
+          />
+        ) : (
+          <span className="text-[12.5px] font-semibold text-[var(--foreground)] truncate flex-1 leading-tight -tracking-[0.01em]">
             {status?.spec?.title ?? 'Wasper Studio'}
           </span>
         )}
@@ -116,8 +123,8 @@ export function Sidebar() {
 
       {/* ── Nav ── */}
       <nav className={cn(
-        'flex flex-col gap-0.5 flex-1 overflow-y-auto',
-        collapsed ? 'px-1.5 py-1' : 'px-3 py-1',
+        'flex flex-col gap-[3px] flex-1 overflow-y-auto',
+        collapsed ? 'px-1.5 py-1' : 'px-2.5 py-1',
       )}>
         {ALL_NAV.map(item => (
           <NavItem key={item.to} {...item} collapsed={collapsed} />
@@ -126,22 +133,22 @@ export function Sidebar() {
 
       {/* ── Footer ── */}
       <div className={cn(
-        'flex-shrink-0 px-3 py-3',
-        collapsed ? 'flex flex-col items-center gap-1.5 px-1.5' : 'flex items-center gap-1',
+        'flex-shrink-0 border-t border-[color-mix(in_srgb,var(--border)_60%,transparent)]',
+        collapsed ? 'flex flex-col items-center gap-1.5 px-1.5 py-2.5' : 'flex items-center gap-0.5 px-2.5 py-2',
       )}>
         {/* Connection status / spec info */}
         {!collapsed && (
           <div className="flex items-center gap-2 flex-1 min-w-0">
             <div
-              className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+              className="w-[7px] h-[7px] rounded-full flex-shrink-0"
               style={{
                 background: connected ? 'var(--success)' : 'var(--muted-foreground)',
-                boxShadow: connected ? '0 0 4px rgba(74,222,128,0.5)' : 'none',
+                boxShadow: connected ? '0 0 5px color-mix(in srgb, var(--success) 55%, transparent)' : 'none',
               }}
             />
-            <span className="text-[11.5px] text-[var(--muted-foreground)] truncate">
+            <span className="text-[11px] text-[var(--muted-foreground)] truncate -tracking-[0.005em]">
               {connected
-                ? (status ? `${status.endpointCount} endpoints` : 'Connected')
+                ? (status ? `${status.endpointCount.toLocaleString()} endpoints` : 'Connected')
                 : 'Disconnected'}
             </span>
           </div>

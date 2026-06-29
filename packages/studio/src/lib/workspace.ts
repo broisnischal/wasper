@@ -33,6 +33,12 @@ export interface Workspace {
   headers: WsKV[];
   /** Default environment for the workspace ('' = follow the globally active env). */
   envId: string;
+  /**
+   * Per-folder auth overrides, keyed by the endpoint tree's folder path
+   * (e.g. "curated" or "curated/artworks"). A request set to "Inherit" picks the
+   * nearest ancestor folder that defines auth before falling back to `auth`.
+   */
+  folderAuth?: Record<string, WorkspaceAuth>;
 }
 
 export const DEFAULT_WS_AUTH: WorkspaceAuth = {
@@ -53,6 +59,7 @@ export function defaultWorkspace(): Workspace {
     auth: { ...DEFAULT_WS_AUTH },
     headers: [{ key: '', value: '', enabled: true }],
     envId: '',
+    folderAuth: {},
   };
 }
 
@@ -67,7 +74,7 @@ export async function listWorkspaces(): Promise<Workspace[]> {
     return [def];
   }
   // Normalize old records that may miss newer fields
-  return all.map(w => ({ ...defaultWorkspace(), ...w, auth: { ...DEFAULT_WS_AUTH, ...w.auth } }));
+  return all.map(w => ({ ...defaultWorkspace(), ...w, auth: { ...DEFAULT_WS_AUTH, ...w.auth }, folderAuth: w.folderAuth ?? {} }));
 }
 
 export function saveWorkspace(w: Workspace): Promise<void> { return dbPut(STORE, w); }

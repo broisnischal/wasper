@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { ChevronRight, ChevronDown } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 
-// ── Collapsible JSON tree (Insomnia-style fold/unfold) ───────────────────────
+// ── Collapsible JSON tree (Insomnia-style fold/unfold with indent guides) ────
 
 const COLORS = {
   key:     'var(--json-key,    #7dd3fc)',
@@ -22,8 +22,18 @@ function Primitive({ value }: { value: unknown }) {
   }
 }
 
+// Vertical indent guides — one faint line per nesting level (Insomnia/Postman style)
+function Guides({ depth }: { depth: number }) {
+  if (depth <= 0) return null;
+  return (
+    <span className="jt-guides" aria-hidden="true">
+      {Array.from({ length: depth }, (_, i) => <span key={i} className="jt-guide" />)}
+    </span>
+  );
+}
+
 interface NodeProps {
-  k: string | null;          // key in parent (null = root / array item label shown as index)
+  k: string | null;          // key in parent (null = root / array item)
   value: unknown;
   depth: number;
   path: string;
@@ -38,7 +48,6 @@ function Node({ k, value, depth, path, expanded, toggle, isLast }: NodeProps) {
   const [page, setPage] = useState(1);
   const isObj = value !== null && typeof value === 'object';
   const comma = isLast ? '' : ',';
-  const indent = { paddingLeft: depth * 18 };
 
   const keyLabel = k !== null && (
     <>
@@ -49,7 +58,8 @@ function Node({ k, value, depth, path, expanded, toggle, isLast }: NodeProps) {
 
   if (!isObj) {
     return (
-      <div style={indent} className="jt-row">
+      <div className="jt-row">
+        <Guides depth={depth} />
         <span className="jt-caret-space" />
         {keyLabel}
         <Primitive value={value} />
@@ -68,12 +78,13 @@ function Node({ k, value, depth, path, expanded, toggle, isLast }: NodeProps) {
 
   if (!open) {
     return (
-      <div style={indent} className="jt-row jt-clickable" onClick={() => toggle(path)}>
+      <div className="jt-row jt-clickable" onClick={() => toggle(path)}>
+        <Guides depth={depth} />
         <span className="jt-caret"><ChevronRight size={11} /></span>
         {keyLabel}
-        <span style={{ color: COLORS.punct }}>{openCh} … {closeCh}</span>
+        <span style={{ color: COLORS.punct }}>{openCh}</span>
         <span className="jt-count">{count} {isArr ? (count === 1 ? 'item' : 'items') : (count === 1 ? 'key' : 'keys')}</span>
-        <span style={{ color: COLORS.punct }}>{comma}</span>
+        <span style={{ color: COLORS.punct }}>{closeCh}{comma}</span>
       </div>
     );
   }
@@ -82,8 +93,9 @@ function Node({ k, value, depth, path, expanded, toggle, isLast }: NodeProps) {
 
   return (
     <>
-      <div style={indent} className="jt-row jt-clickable" onClick={() => toggle(path)}>
-        <span className="jt-caret"><ChevronDown size={11} /></span>
+      <div className="jt-row jt-clickable" onClick={() => toggle(path)}>
+        <Guides depth={depth} />
+        <span className="jt-caret jt-caret-open"><ChevronRight size={11} /></span>
         {keyLabel}
         <span style={{ color: COLORS.punct }}>{openCh}</span>
       </div>
@@ -100,13 +112,16 @@ function Node({ k, value, depth, path, expanded, toggle, isLast }: NodeProps) {
         />
       ))}
       {visible.length < entries.length && (
-        <div style={{ paddingLeft: (depth + 1) * 18 }} className="jt-row">
+        <div className="jt-row">
+          <Guides depth={depth + 1} />
+          <span className="jt-caret-space" />
           <button className="jt-more" onClick={() => setPage(p => p + 1)}>
             … {entries.length - visible.length} more
           </button>
         </div>
       )}
-      <div style={indent} className="jt-row">
+      <div className="jt-row">
+        <Guides depth={depth} />
         <span className="jt-caret-space" />
         <span style={{ color: COLORS.punct }}>{closeCh}{comma}</span>
       </div>
@@ -156,7 +171,7 @@ export function JsonTree({ data, controlsRef }: { data: unknown; controlsRef?: R
   });
 
   return (
-    <div className="flex-1 overflow-auto py-2 px-3 font-mono text-[12.5px] leading-[1.7]">
+    <div className="jt-scroll flex-1 overflow-auto py-2 font-mono text-[12.5px] leading-[1.65]">
       <Node k={null} value={data} depth={0} path="$" expanded={expanded} toggle={toggle} isLast />
     </div>
   );

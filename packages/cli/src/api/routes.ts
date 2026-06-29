@@ -651,10 +651,10 @@ async function executeTool(
     let authConfig: Record<string, string>;
     let type: string;
     if (tokenType === 'apikey_header') {
-      authConfig = { type: 'apikey_header', header: headerName, value: token };
+      authConfig = { type: 'apikey_header', headerName, apiKey: token };
       type = 'apikey_header';
     } else if (tokenType === 'apikey_query') {
-      authConfig = { type: 'apikey_query', param: headerName, value: token };
+      authConfig = { type: 'apikey_query', queryParam: headerName, apiKey: token };
       type = 'apikey_query';
     } else {
       authConfig = { type: 'bearer', token };
@@ -755,12 +755,22 @@ Tools:
 
 Auth workflow: 401/403 → list_auth_profiles → set_active_auth OR find login endpoint → save_auth_token → retry.
 
-Rules:
-- Never repeat a search you already ran — results are cached.
-- Diagnose errors before retrying. Three failures on the same endpoint stops the agent.
-- Do not fire rapid successive API requests.
+## How to work
+1. Plan first. For anything beyond a one-shot lookup, briefly state the steps you'll take, then execute them.
+2. Discover before acting. Use search_endpoints / get_endpoint_schema to find the RIGHT operationId and its exact parameters and request-body shape before calling execute_api_request. Never invent an operationId, path, or field — if it's not in the spec or a schema you fetched, don't assume it exists.
+3. Read the schema. Supply required path/query params and a request body that matches the declared schema. Prefer values from the user, prior responses, or the active environment over placeholders.
+4. Verify results. After a call, check the status and body against what the endpoint declares. If it failed, diagnose the cause (auth? wrong param? wrong endpoint?) before retrying — do not blindly repeat. Three failures on one endpoint stops the agent.
+5. Chain intelligently. Extract IDs/tokens from earlier responses to drive later calls.
 
-Be concise. Format code and JSON in fenced blocks.${ai.customInstructions ? `\n\n---\n## Custom instructions\n${ai.customInstructions}` : ''}${body.extra_context ? `\n\n---\n## Context\n${body.extra_context}` : ''}`;
+## Rules
+- Never repeat a search or schema fetch you already ran — results are cached.
+- Don't fire rapid duplicate API requests; one well-formed call beats three guesses.
+- Ground every claim in a tool result. Quote the operationId, status code, or field you're referring to. Don't fabricate data.
+
+## Output
+- Be concise and structured. Lead with the answer, then supporting detail.
+- Format code, JSON, and request/response bodies in fenced blocks.
+- When you ran requests, briefly note what you called (method + path + status) so the user can trust the result.${ai.customInstructions ? `\n\n---\n## Custom instructions\n${ai.customInstructions}` : ''}${body.extra_context ? `\n\n---\n## Context\n${body.extra_context}` : ''}`;
 
   const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
   const writer = writable.getWriter();
@@ -782,7 +792,7 @@ Be concise. Format code and JSON in fenced blocks.${ai.customInstructions ? `\n\
           apiKey: ai.apiKey,
           model: ai.model || providerDefaults.model,
           baseUrl: ai.baseUrl || providerDefaults.baseUrl,
-          maxTokens: ai.maxTokens ?? 4096,
+          maxTokens: ai.maxTokens ?? 8192,
           stepTimeoutMs: ai.stepTimeoutMs ?? 60_000,
           temperature: ai.temperature,
           topK: ai.topK && ai.topK > 0 ? ai.topK : undefined,

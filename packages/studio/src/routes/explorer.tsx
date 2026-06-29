@@ -8,15 +8,26 @@ import { JsonViewer } from '../components/JsonViewer';
 import { JsonTree } from '../components/JsonTree';
 import { SuggestInput } from '../components/SuggestInput';
 import { CodeModal } from '../components/CodeModal';
+import { CodeEditor, type CodeEditorHandle } from '../components/CodeEditor';
 import { COMMON_HEADERS, HEADER_VALUE_SUGGESTIONS, RAW_BODY_TYPES, jqFilter, generateJsonSchema } from '../lib/http';
 import type { CodeRequest } from '../lib/codegen';
 import { cn } from '../lib/utils';
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from '../components/ui/empty';
+import { Button } from '../components/ui/button';
+import { Tooltip, TooltipTrigger, TooltipContent } from '../components/ui/tooltip';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../components/ui/select';
+import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
+  DropdownMenuItem, DropdownMenuSeparator,
+} from '../components/ui/dropdown-menu';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../components/ui/dialog';
+import { Input } from '../components/ui/input';
 import { useApp } from '../context';
 import { resolveVars, setSpecVars, type Environment } from '../lib/env';
 import {
   listWorkspaces, saveWorkspace, deleteWorkspace, defaultWorkspace,
   getActiveWorkspaceId, setActiveWorkspaceId, DEFAULT_WORKSPACE_ID,
-  type Workspace,
+  type Workspace, type WorkspaceAuth,
 } from '../lib/workspace';
 import { dbGet, dbPut, dbGetAll, dbDel } from '../lib/storage';
 import {
@@ -26,7 +37,7 @@ import {
   Bookmark, BookmarkPlus, Share2, Route as RouteIcon,
   FlaskConical, SlidersHorizontal, ShieldAlert, Terminal, Globe, Info,
   CheckCircle2, XCircle, Clock, RefreshCcw, MoreHorizontal,
-  Rows2, Columns2, ChevronsUpDown, PanelLeftClose, PanelLeftOpen, Sparkles,
+  Rows2, Columns2, FoldVertical, UnfoldVertical, PanelLeftClose, PanelLeftOpen, Sparkles,
 } from 'lucide-react';
 
 export const Route = createFileRoute('/explorer')({ component: ExplorerPage });
@@ -288,9 +299,40 @@ function fileToPayload(file: File): Promise<FilePayload> {
   });
 }
 
-/** Request auth after resolving 'inherit' against the workspace default. */
-function effectiveAuth(tab: RequestTab, ws: Workspace | null): AuthConfig {
+/** A stored WorkspaceAuth (folder/workspace) widened to the explorer's AuthConfig. */
+function wsAuthToConfig(a: WorkspaceAuth): AuthConfig {
+  return { ...DEFAULT_AUTH, ...a, type: a.type };
+}
+
+/** The endpoint-tree folder segments for a tab's operation, root→leaf (no method). */
+function tabFolderSegments(tab: RequestTab, ops: ParsedOperation[]): string[] {
+  const op = tab.operationId ? ops.find(o => o.operationId === tab.operationId) : null;
+  if (!op) return [];
+  return op.path.replace(/^\//, '').split('/').filter(Boolean);
+}
+
+/**
+ * Nearest ancestor folder that defines an auth override, walking leaf→root.
+ * Returns null when no folder on the path sets auth.
+ */
+function resolveFolderAuth(tab: RequestTab, ws: Workspace | null, ops: ParsedOperation[]): AuthConfig | null {
+  const map = ws?.folderAuth;
+  if (!map) return null;
+  const segs = tabFolderSegments(tab, ops);
+  for (let i = segs.length; i >= 1; i--) {
+    const fa = map[segs.slice(0, i).join('/')];
+    if (fa) return wsAuthToConfig(fa);
+  }
+  return null;
+}
+
+/**
+ * Request auth after resolving 'inherit'. Precedence for an inheriting request:
+ * nearest folder override → workspace default → CLI global.
+ */
+function effectiveAuth(tab: RequestTab, ws: Workspace | null, folderAuth: AuthConfig | null = null): AuthConfig {
   if (tab.auth.type !== 'inherit') return tab.auth;
+  if (folderAuth) return folderAuth;
   if (!ws) return { ...DEFAULT_AUTH, type: 'cli' };
   return { ...DEFAULT_AUTH, ...ws.auth };
 }
@@ -304,9 +346,9 @@ function effectiveEnv(tab: RequestTab, ws: Workspace | null, envs: Environment[]
 }
 
 /** Resolved request pieces shared by send(), payload preview, and codegen. */
-function resolveRequest(tab: RequestTab, activeEnv: Environment | null, ws: Workspace | null) {
+function resolveRequest(tab: RequestTab, activeEnv: Environment | null, ws: Workspace | null, ops: ParsedOperation[] = []) {
   const resolve = (s: string) => resolveVars(s, activeEnv);
-  const auth = effectiveAuth(tab, ws);
+  const auth = effectiveAuth(tab, ws, resolveFolderAuth(tab, ws, ops));
   const rawPathUrl = replacePaths(resolve(tab.url), tab.pathParams);
   const authQueryRows = buildAuthQueryParams(auth);
   const allQueryParams = [...tab.params, ...authQueryRows];
@@ -524,123 +566,36 @@ function FormDataTable({ rows, onChange, allowFiles }: {
 }
 
 // ── JSON Editor ─────────────────────────────────────────────────────────────
-// Synchronous tokenizer — no async, no debounce, no flash.
-// Uses existing .json-key / .json-str / .json-num / .json-bool / .json-null
-// CSS classes so colors follow the active theme automatically.
-function highlightJson(src: string): string {
-  if (!src.trim()) return '';
-  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  // Groups: string · number · keyword · punctuation · whitespace · other
-  const TOKEN = /("(?:[^"\\]|\\.)*"?)|(-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?)|(true|false|null)|([{}\[\],:])|(\s+)|(.)/g;
-  const stack: ('obj' | 'arr')[] = [];
-  let expectKey = false;
-  let out = '';
-  let m: RegExpExecArray | null;
-  while ((m = TOKEN.exec(src)) !== null) {
-    const [, str, num, kw, punc, ws, other] = m;
-    if (ws !== undefined) {
-      out += esc(ws);
-    } else if (str !== undefined) {
-      out += `<span class="${expectKey ? 'json-key' : 'json-str'}">${esc(str)}</span>`;
-      if (expectKey) expectKey = false;
-    } else if (num !== undefined) {
-      out += `<span class="json-num">${esc(num)}</span>`;
-    } else if (kw !== undefined) {
-      out += `<span class="${kw === 'null' ? 'json-null' : 'json-bool'}">${esc(kw)}</span>`;
-    } else if (punc !== undefined) {
-      out += esc(punc);
-      if (punc === '{') { stack.push('obj'); expectKey = true; }
-      else if (punc === '[') { stack.push('arr'); expectKey = false; }
-      else if (punc === '}' || punc === ']') { stack.pop(); expectKey = false; }
-      else if (punc === ':') { expectKey = false; }
-      else if (punc === ',') { expectKey = stack[stack.length - 1] === 'obj'; }
-    } else if (other !== undefined) {
-      out += `<span style="color:var(--destructive)">${esc(other)}</span>`;
-    }
-  }
-  return out;
+// Map a raw-body MIME type to a Monaco language id (Monaco uses 'plaintext').
+function rawMimeToLang(mime: string): string {
+  const lang = RAW_BODY_TYPES.find(rt => rt.mime === mime)?.lang ?? 'text';
+  return lang === 'text' ? 'plaintext' : lang;
 }
 
-const JSON_PRE_STYLE = "margin:0;padding:12px 16px;font-family:'JetBrains Mono',GeistMono,ui-monospace,monospace;font-size:12.5px;line-height:1.65;white-space:pre-wrap;word-break:break-all;overflow:auto;color:var(--foreground)";
-
-const JsonEditor = React.memo(function JsonEditor({ value, onChange, placeholder }: {
-  value: string; onChange: (v: string) => void; placeholder?: string;
+const JsonEditor = React.memo(function JsonEditor({ value, onChange, placeholder, schema, path }: {
+  value: string; onChange: (v: string) => void; placeholder?: string; schema?: object; path?: string;
 }) {
-  const [local, setLocal] = useState(value);
-  const taRef = useRef<HTMLTextAreaElement>(null);
-  const hlRef = useRef<HTMLDivElement>(null);
-  const onChangeRef = useRef(onChange);
-  onChangeRef.current = onChange;
+  const editorRef = useRef<CodeEditorHandle>(null);
 
-  // sync from parent only when value changes from outside (e.g. loading an endpoint)
-  const prevValue = useRef(value);
-  if (value !== prevValue.current && value !== local) {
-    prevValue.current = value;
-    setLocal(value);
-  }
-
-  // Synchronous highlight — always current, no debounce, no flash
-  const highlighted = useMemo(() => highlightJson(local), [local]);
-
-  const syncScroll = () => {
-    if (taRef.current && hlRef.current) {
-      const pre = hlRef.current.querySelector('pre');
-      if (pre) { pre.scrollTop = taRef.current.scrollTop; pre.scrollLeft = taRef.current.scrollLeft; }
-    }
-  };
-
-  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const v = e.target.value;
-    setLocal(v);
-    onChangeRef.current(v);
-  };
-
-  const format = () => {
-    try {
-      const fmt = JSON.stringify(JSON.parse(local), null, 2);
-      setLocal(fmt);
-      onChangeRef.current(fmt);
-    } catch { /**/ }
-  };
-
-  const escPh = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const format = () => editorRef.current?.format();
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-[var(--border)] bg-[var(--card)] flex-shrink-0">
-        <span className="text-[11px] text-[var(--placeholder-foreground)] font-mono">JSON</span>
-        <button className="btn btn-ghost btn-sm text-[11px] ml-auto h-6 px-2" onClick={format}>Format</button>
+      <div className="flex items-center gap-2 px-3 h-[34px] border-b border-[var(--border)] bg-[var(--card)] flex-shrink-0">
+        <FileJson size={12} className="text-[var(--muted-foreground)]" />
+        <span className="text-[11px] text-[var(--muted-foreground)] font-medium">JSON</span>
+        {schema && (
+          <span className="flex items-center gap-1 text-[10.5px] text-[var(--muted-foreground)] opacity-70" title="Autocomplete & validation from this endpoint's schema">
+            <Sparkles size={9} className="text-[var(--accent)]" />
+            schema
+          </span>
+        )}
+        <button className="btn btn-ghost btn-sm text-[11px] ml-auto h-6 px-2 gap-1" onClick={format}>
+          <AlignLeft size={11} /> Format
+        </button>
       </div>
       <div className="relative flex-1 overflow-hidden">
-        <div
-          ref={hlRef}
-          className="pointer-events-none absolute inset-0 overflow-hidden flex flex-col"
-          dangerouslySetInnerHTML={{
-            __html: highlighted
-              ? `<pre style="${JSON_PRE_STYLE}">${highlighted}</pre>`
-              : `<pre style="${JSON_PRE_STYLE};color:var(--placeholder-foreground)">${escPh(placeholder ?? '')}</pre>`,
-          }}
-        />
-        <textarea
-          ref={taRef}
-          value={local}
-          onChange={handleChange}
-          onScroll={syncScroll}
-          spellCheck={false}
-          style={{
-            position: 'absolute', inset: 0, width: '100%', height: '100%',
-            background: 'transparent',
-            color: 'transparent',
-            caretColor: 'var(--foreground)',
-            border: 'none', outline: 'none', resize: 'none',
-            padding: '12px 16px',
-            fontFamily: "'JetBrains Mono', GeistMono, ui-monospace, monospace",
-            fontSize: 12.5, lineHeight: 1.65,
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-all',
-            zIndex: 1,
-          }}
-        />
+        <CodeEditor ref={editorRef} value={value} onChange={onChange} language="json" placeholder={placeholder} schema={schema} path={path} />
       </div>
     </div>
   );
@@ -690,9 +645,14 @@ function AuthPanel({ auth, onChange, showInherit = true, inheritedFrom }: {
   return (
     <div className="flex flex-col gap-4 max-w-[560px]">
       {field('Auth type', (
-        <select className="select h-8 w-full text-[12.5px]" value={auth.type} onChange={e => upd({ type: e.target.value as AuthConfig['type'] })}>
-          {types.map(t => <option key={t} value={t}>{AUTH_TYPE_LABELS[t]}</option>)}
-        </select>
+        <Select value={auth.type} onValueChange={v => upd({ type: v as AuthConfig['type'] })}>
+          <SelectTrigger className="h-8 w-full text-[12.5px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {types.map(t => <SelectItem key={t} value={t}>{AUTH_TYPE_LABELS[t]}</SelectItem>)}
+          </SelectContent>
+        </Select>
       ))}
 
       {auth.type === 'inherit' && (
@@ -848,10 +808,15 @@ function WorkspaceModal({ workspace, envs, onSave, onDelete, onClose }: {
         <div className="flex-1 overflow-auto p-4 flex flex-col gap-4">
           <div className="flex gap-2">
             <input className="input h-8 flex-1 text-[13px]" placeholder="Workspace name" value={draft.name} onChange={e => set({ name: e.target.value })} />
-            <select className="select h-8 w-[180px] text-[12.5px]" value={draft.envId} onChange={e => set({ envId: e.target.value })}>
-              <option value="">Env: follow global</option>
-              {envs.map(e => <option key={e.id} value={e.id}>Env: {e.name}</option>)}
-            </select>
+            <Select value={draft.envId || '__global__'} onValueChange={v => set({ envId: v === '__global__' ? '' : v })}>
+              <SelectTrigger className="h-8 w-[180px] text-[12.5px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__global__">Env: follow global</SelectItem>
+                {envs.map(e => <SelectItem key={e.id} value={e.id}>Env: {e.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="border-t border-[var(--border)] pt-4">
@@ -891,9 +856,70 @@ function WorkspaceModal({ workspace, envs, onSave, onDelete, onClose }: {
   );
 }
 
+// ── Folder Auth Modal ──────────────────────────────────────────────────────
+// Sets a Postman-style auth override on a folder (tree path). Requests under it
+// that are set to "Inherit" pick this up before falling back to the workspace.
+function FolderAuthModal({ folderPath, current, inheritedFrom, onSave, onClose }: {
+  folderPath: string;
+  current: WorkspaceAuth | null;
+  inheritedFrom: { name: string; type: AuthConfig['type'] } | null;
+  onSave: (auth: WorkspaceAuth | null) => void;
+  onClose: () => void;
+}) {
+  const [draft, setDraft] = useState<AuthConfig>(() =>
+    current ? { ...DEFAULT_AUTH, ...current } : { ...DEFAULT_AUTH, type: 'inherit' });
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [onClose]);
+
+  // 'inherit' means "no override on this folder" — clear it on save.
+  const save = () => onSave(draft.type === 'inherit' ? null : ({ ...draft, type: draft.type } as WorkspaceAuth));
+
+  return (
+    <div className="cmd-overlay" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div
+        onMouseDown={e => e.stopPropagation()}
+        className="w-full mx-4 bg-[var(--popover)] border border-[var(--border-strong)] rounded-xl overflow-hidden flex flex-col"
+        style={{ maxWidth: 640, maxHeight: '82vh', boxShadow: 'var(--shadow)', animation: 'dialog-in 0.12s ease' }}
+      >
+        <div className="flex items-center gap-2.5 px-4 py-3 border-b border-[var(--border)] flex-shrink-0">
+          <Folder size={14} className="text-[var(--muted-foreground)]" />
+          <h2 className="text-[13.5px] font-semibold text-[var(--foreground)] flex-1 m-0 truncate">
+            Folder auth — <code className="font-mono text-[12.5px] text-[var(--muted-foreground)]">/{folderPath}</code>
+          </h2>
+          <button className="btn btn-ghost btn-icon btn-sm" onClick={onClose}><X size={13} /></button>
+        </div>
+
+        <div className="flex-1 overflow-auto p-4 flex flex-col gap-4">
+          <div className="text-[12px] text-[var(--placeholder-foreground)]">
+            Endpoints under this folder set to <strong className="text-[var(--foreground)]">Inherit</strong> use this auth.
+            Choose <strong className="text-[var(--foreground)]">Inherit from workspace</strong> to remove the override.
+          </div>
+          <AuthPanel auth={draft} onChange={setDraft} showInherit inheritedFrom={inheritedFrom} />
+        </div>
+
+        <div className="flex items-center gap-2 px-4 py-3 border-t border-[var(--border)] flex-shrink-0">
+          {current && (
+            <button className="btn btn-ghost btn-sm gap-1.5 text-[12px] text-[var(--destructive)]" onClick={() => onSave(null)}>
+              <Trash2 size={12} /> Clear override
+            </button>
+          )}
+          <div className="ml-auto flex gap-2">
+            <button className="btn btn-ghost btn-sm" onClick={onClose}>Cancel</button>
+            <button className="btn btn-primary btn-sm" onClick={save}>Save</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Payload Preview Panel ──────────────────────────────────────────────────
-function PayloadPanel({ tab, activeEnv, ws }: { tab: RequestTab; activeEnv: Environment | null; ws: Workspace | null }) {
-  const { url: fullUrl, headers, body, multipart, auth, engineAuth, authProfile } = resolveRequest(tab, activeEnv, ws);
+function PayloadPanel({ tab, activeEnv, ws, ops }: { tab: RequestTab; activeEnv: Environment | null; ws: Workspace | null; ops: ParsedOperation[] }) {
+  const { url: fullUrl, headers, body, multipart, auth, engineAuth, authProfile } = resolveRequest(tab, activeEnv, ws, ops);
   const methodColor = MC[tab.method] ?? 'var(--foreground)';
 
   let bodyText = body ?? '';
@@ -1055,9 +1081,13 @@ function buildTreePaths(ops: ParsedOperation[]) {
   return { paths, pathToOp, opToPath };
 }
 
-function EndpointTree({ ops, onSelect, activeId, onContextMenu }: {
+function EndpointTree({ ops, onSelect, activeId, onContextMenu, onFolderContextMenu, authedFolders }: {
   ops: ParsedOperation[]; onSelect: (op: ParsedOperation) => void; activeId?: string;
   onContextMenu?: (e: React.MouseEvent, op: ParsedOperation) => void;
+  /** Right-click on a folder row (path = tree folder path, e.g. "curated/artworks"). */
+  onFolderContextMenu?: (e: React.MouseEvent, folderPath: string) => void;
+  /** Folder paths that carry an auth override — rendered with a 🔒 decoration. */
+  authedFolders?: Set<string>;
 }) {
   const [search, setSearch] = useState('');
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1077,8 +1107,12 @@ function EndpointTree({ ops, onSelect, activeId, onContextMenu }: {
   // Stable callback refs
   const onSelectRef = useRef(onSelect);
   const onContextMenuRef = useRef(onContextMenu);
+  const onFolderContextMenuRef = useRef(onFolderContextMenu);
+  const authedFoldersRef = useRef(authedFolders);
   onSelectRef.current = onSelect;
   onContextMenuRef.current = onContextMenu;
+  onFolderContextMenuRef.current = onFolderContextMenu;
+  authedFoldersRef.current = authedFolders;
 
   const filteredOps = useMemo(() => {
     if (!search.trim()) return ops;
@@ -1111,9 +1145,18 @@ function EndpointTree({ ops, onSelect, activeId, onContextMenu }: {
     stickyFolders: false,
     onSelectionChange: (selected) => {
       if (programmaticSelectRef.current) { programmaticSelectRef.current = false; return; }
-      const op = pathToOpRef.current.get(selected[0] ?? '');
-      if (op) { lastOpRef.current = op; onSelectRef.current(op); }
+      const path = selected[0] ?? '';
+      const op = pathToOpRef.current.get(path);
+      if (op) { lastOpRef.current = op; onSelectRef.current(op); return; }
+      // A folder row was clicked — toggle its expansion (Postman-like behaviour).
+      if (!path) return;
+      try {
+        const it = model.getItem(path) as { isDirectory?(): boolean; toggle?(): void } | null;
+        if (it && it.isDirectory?.()) it.toggle?.();
+      } catch { /* item not mounted */ }
     },
+    renderRowDecoration: ({ item }) =>
+      authedFoldersRef.current?.has(item.path) ? { text: '🔒', title: 'Folder auth set' } : null,
     unsafeCSS: EP_TREE_CSS,
   });
 
@@ -1164,8 +1207,15 @@ function EndpointTree({ ops, onSelect, activeId, onContextMenu }: {
         ref={containerRef}
         className="flex-1 min-h-0"
         onContextMenu={e => {
-          const op = lastOpRef.current;
-          if (op) { e.preventDefault(); onContextMenuRef.current?.(e, op); }
+          // Resolve the row under the cursor from its data-item-path so folder
+          // and endpoint right-clicks each get the correct menu.
+          const row = (e.target as HTMLElement).closest('[data-item-path]');
+          const path = row?.getAttribute('data-item-path') ?? '';
+          if (!path) return;
+          const op = pathToOpRef.current.get(path);
+          e.preventDefault();
+          if (op) { lastOpRef.current = op; onContextMenuRef.current?.(e, op); }
+          else onFolderContextMenuRef.current?.(e, path);
         }}
       >
         {filteredOps.length > 0 ? (
@@ -1313,6 +1363,8 @@ function NetworkInfoPanel({ url, status, statusText, headers, networkInfo, size,
   );
 }
 
+const NOOP = () => {};
+
 function ResponsePanel({ response, loading }: { response: ResponseResult | null; loading: boolean }) {
   type RespView = 'body' | 'headers' | 'cookies' | 'raw' | 'preview' | 'schema' | 'timing' | 'network';
   const VALID_VIEWS: RespView[] = ['body', 'headers', 'cookies', 'raw', 'preview', 'schema', 'timing', 'network'];
@@ -1392,11 +1444,15 @@ function ResponsePanel({ response, loading }: { response: ResponseResult | null;
   );
 
   if (!response) return (
-    <div className="empty-state">
-      <Send size={26} className="opacity-40" />
-      <div className="text-[13px] font-medium">Send a request to see the response</div>
-      <div className="text-[12px] text-[var(--placeholder-foreground)]">Press Mod+Enter or click Send</div>
-    </div>
+    <Empty className="flex-1">
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <Send />
+        </EmptyMedia>
+        <EmptyTitle>Send a request to see the response</EmptyTitle>
+        <EmptyDescription>Press Mod+Enter or click Send</EmptyDescription>
+      </EmptyHeader>
+    </Empty>
   );
 
   if (response.error) return (
@@ -1464,54 +1520,60 @@ function ResponsePanel({ response, loading }: { response: ResponseResult | null;
         <div className="flex-1" />
 
         {/* Controls */}
-        <div className="flex items-center gap-0.5">
-          {view === 'body' && isJson && bodyMode === 'tree' && (
+        <div className="flex items-center gap-1">
+          {view === 'body' && isJson && (
             <>
-              <button className="btn btn-ghost btn-sm h-6 px-1.5 text-[10.5px] gap-1" onClick={() => treeControls.current?.expandAll()} title="Expand all">
-                <ChevronsUpDown size={10} />all
-              </button>
-              <button className="btn btn-ghost btn-sm h-6 px-1.5 text-[10.5px]" onClick={() => treeControls.current?.collapseAll()} title="Collapse all">
-                <ChevronsUpDown size={10} />
-              </button>
+              {/* View mode — segmented */}
+              <div className="flex items-center rounded-md bg-muted/60 p-0.5">
+                <button
+                  className={cn('flex size-6 items-center justify-center rounded-[5px] transition-colors',
+                    bodyMode === 'tree' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground')}
+                  onClick={() => setBodyMode('tree')} title="Tree view"
+                ><Braces size={11} /></button>
+                <button
+                  className={cn('flex size-6 items-center justify-center rounded-[5px] transition-colors',
+                    bodyMode === 'pretty' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground')}
+                  onClick={() => setBodyMode('pretty')} title="Raw text"
+                ><AlignLeft size={11} /></button>
+              </div>
+
+              {bodyMode === 'tree' && (
+                <>
+                  <Tooltip><TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon-xs" onClick={() => treeControls.current?.expandAll()}><UnfoldVertical /></Button>
+                  </TooltipTrigger><TooltipContent>Expand all</TooltipContent></Tooltip>
+                  <Tooltip><TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon-xs" onClick={() => treeControls.current?.collapseAll()}><FoldVertical /></Button>
+                  </TooltipTrigger><TooltipContent>Collapse all</TooltipContent></Tooltip>
+                </>
+              )}
+
+              <Tooltip><TooltipTrigger asChild>
+                <Button
+                  variant="ghost" size="icon-xs"
+                  className={cn(filterOpen && 'bg-muted text-foreground', !filterOpen && filter && 'text-brand')}
+                  onClick={() => setFilterOpen(v => !v)}
+                ><Search /></Button>
+              </TooltipTrigger><TooltipContent>{filterOpen ? 'Hide filter' : 'Filter · jq'}</TooltipContent></Tooltip>
+
+              <div className="mx-0.5 h-4 w-px bg-border" />
             </>
           )}
-          {view === 'body' && isJson && (
-            <button
-              className={cn(
-                'btn btn-ghost btn-sm btn-icon h-6 w-6',
-                filterOpen && 'bg-[color-mix(in_srgb,var(--foreground)_10%,transparent)] text-[var(--foreground)]',
-                !filterOpen && filter ? 'text-[var(--primary)]' : '',
-              )}
-              onClick={() => setFilterOpen(v => !v)}
-              title={filterOpen ? 'Hide filter' : 'Filter / jq'}
-            >
-              <Search size={11} />
-            </button>
-          )}
-          {view === 'body' && isJson && (
-            <div className="flex items-center gap-0.5 pl-1 border-l border-[var(--border)] ml-0.5">
-              <button
-                className={cn('btn btn-ghost btn-sm btn-icon h-6 w-6', bodyMode === 'tree' && 'bg-[color-mix(in_srgb,var(--foreground)_10%,transparent)] text-[var(--foreground)]')}
-                onClick={() => setBodyMode('tree')} title="Tree view"
-              ><Braces size={10} /></button>
-              <button
-                className={cn('btn btn-ghost btn-sm btn-icon h-6 w-6', bodyMode === 'pretty' && 'bg-[color-mix(in_srgb,var(--foreground)_10%,transparent)] text-[var(--foreground)]')}
-                onClick={() => setBodyMode('pretty')} title="Pretty text"
-              ><AlignLeft size={10} /></button>
-            </div>
-          )}
-          <div className="w-px h-4 bg-[var(--border)] mx-0.5" />
-          <button className="btn btn-ghost btn-sm btn-icon h-6 w-6" onClick={() => copy(filter.trim() && isJson ? filteredText : response.body, 'body')} title="Copy body">
-            {copied === 'body' ? <Check size={11} className="text-[var(--primary)]" /> : <Copy size={11} />}
-          </button>
-          <a
-            href={isBinary
-              ? `data:${contentType.split(';')[0] || 'application/octet-stream'};base64,${response.bodyB64}`
-              : `data:text/plain;charset=utf-8,${encodeURIComponent(response.body)}`}
-            download={isBinary ? 'response' : (isJson ? 'response.json' : 'response.txt')}
-            className="btn btn-ghost btn-sm btn-icon h-6 w-6" title="Download">
-            <Download size={11} />
-          </a>
+          <Tooltip><TooltipTrigger asChild>
+            <Button variant="ghost" size="icon-xs" onClick={() => copy(filter.trim() && isJson ? filteredText : response.body, 'body')}>
+              {copied === 'body' ? <Check className="text-brand" /> : <Copy />}
+            </Button>
+          </TooltipTrigger><TooltipContent>Copy body</TooltipContent></Tooltip>
+          <Tooltip><TooltipTrigger asChild>
+            <Button asChild variant="ghost" size="icon-xs">
+              <a
+                href={isBinary
+                  ? `data:${contentType.split(';')[0] || 'application/octet-stream'};base64,${response.bodyB64}`
+                  : `data:text/plain;charset=utf-8,${encodeURIComponent(response.body)}`}
+                download={isBinary ? 'response' : (isJson ? 'response.json' : 'response.txt')}
+              ><Download /></a>
+            </Button>
+          </TooltipTrigger><TooltipContent>Download</TooltipContent></Tooltip>
         </div>
       </div>
 
@@ -1564,7 +1626,7 @@ function ResponsePanel({ response, loading }: { response: ResponseResult | null;
           ) : isJson ? (
             bodyMode === 'tree'
               ? <JsonTree data={filtered} controlsRef={treeControls} />
-              : <JsonViewer text={filteredText} lang="json" />
+              : <CodeEditor value={filteredText} onChange={NOOP} language="json" readOnly />
           ) : isHtml ? (
             <div className="flex-1 flex flex-col overflow-hidden">
               <JsonViewer text={response.body} />
@@ -1576,7 +1638,7 @@ function ResponsePanel({ response, loading }: { response: ResponseResult | null;
               </div>
             </div>
           ) : (
-            <JsonViewer text={response.body} />
+            <CodeEditor value={response.body} onChange={NOOP} language="plaintext" readOnly />
           )
         )}
 
@@ -1874,14 +1936,9 @@ function TestsPanel({ code, onChange, results }: { code: string; onChange: (v: s
         </div>
       </div>
       <div className="flex-1 min-h-0 flex flex-col">
-        <textarea
-          className="flex-1 w-full font-mono text-[12px] resize-none border-0 outline-none p-3 leading-relaxed"
-          style={{ background: 'var(--background)', color: 'var(--foreground)', caretColor: 'var(--foreground)' }}
-          placeholder={TESTS_PLACEHOLDER}
-          value={code}
-          onChange={e => onChange(e.target.value)}
-          spellCheck={false}
-        />
+        <div className="relative flex-1 overflow-hidden">
+          <CodeEditor value={code} onChange={onChange} language="javascript" placeholder={TESTS_PLACEHOLDER} />
+        </div>
         {results !== null && results.length > 0 && (
           <div className="border-t border-[var(--border)] bg-[var(--card)] flex-shrink-0 max-h-[160px] overflow-y-auto">
             {results.map((r, i) => (
@@ -2037,8 +2094,11 @@ function ExplorerPage() {
 
   interface CtxMenu { x: number; y: number; tabId: string }
   interface EpCtxMenu { x: number; y: number; op: ParsedOperation }
+  interface FolderCtxMenu { x: number; y: number; folderPath: string }
   const [ctxMenu, setCtxMenu] = useState<CtxMenu | null>(null);
   const [epCtxMenu, setEpCtxMenu] = useState<EpCtxMenu | null>(null);
+  const [folderCtxMenu, setFolderCtxMenu] = useState<FolderCtxMenu | null>(null);
+  const [folderAuthPath, setFolderAuthPath] = useState<string | null>(null);
 
   const [activeOpId, setActiveOpId] = useState<string | undefined>();
   const [codeOpen, setCodeOpen] = useState(false);
@@ -2061,7 +2121,6 @@ function ExplorerPage() {
   const [interceptRules, setInterceptRules] = useState<InterceptRule[]>([]);
   const [proxyGuideOpen, setProxyGuideOpen] = useState(false);
   const [reqSettingsOpen, setReqSettingsOpen] = useState(false);
-  const [moreOpen, setMoreOpen] = useState(false);
 
   // ── Stable refs so hotkey callbacks never go stale ──────────────────────
   const sendRef      = useRef<null | (() => Promise<void>)>(null);
@@ -2100,6 +2159,24 @@ function ExplorerPage() {
     await saveWorkspace(w).catch(() => {});
     setWorkspaces(prev => prev.some(p => p.id === w.id) ? prev.map(p => p.id === w.id ? w : p) : [...prev, w]);
     setWsModalOpen(false);
+  };
+
+  // Folders (tree paths) on the active workspace that carry an auth override.
+  const authedFolders = useMemo(
+    () => new Set(Object.keys(activeWs?.folderAuth ?? {})),
+    [activeWs],
+  );
+
+  // Persist (or clear) a folder-level auth override on the active workspace.
+  const saveFolderAuth = async (folderPath: string, auth: WorkspaceAuth | null) => {
+    const ws = activeWs ?? defaultWorkspace();
+    const folderAuth = { ...(ws.folderAuth ?? {}) };
+    if (auth) folderAuth[folderPath] = auth;
+    else delete folderAuth[folderPath];
+    const next = { ...ws, folderAuth };
+    await saveWorkspace(next).catch(() => {});
+    setWorkspaces(prev => prev.some(p => p.id === next.id) ? prev.map(p => p.id === next.id ? next : p) : [...prev, next]);
+    setFolderAuthPath(null);
   };
   const removeWs = async (id: string) => {
     await deleteWorkspace(id).catch(() => {});
@@ -2366,7 +2443,7 @@ function ExplorerPage() {
 
   const shareRequest = () => {
     const env = effectiveEnv(tab, activeWs, envs, globalEnv);
-    const { url, headers, body } = resolveRequest(tab, env, activeWs);
+    const { url, headers, body } = resolveRequest(tab, env, activeWs, operations);
     const snippet = JSON.stringify({ method: tab.method, url, headers: Object.fromEntries(headers), body: body ?? '' }, null, 2);
     navigator.clipboard.writeText(snippet).catch(() => {});
     setShareCopied(true);
@@ -2378,7 +2455,7 @@ function ExplorerPage() {
     upd(tab.id, { loading: true, response: null });
 
     const env = effectiveEnv(tab, activeWs, envs, globalEnv);
-    const { url, headers, body, multipart, authProfile, engineAuth } = resolveRequest(tab, env, activeWs);
+    const { url, headers, body, multipart, authProfile, engineAuth } = resolveRequest(tab, env, activeWs, operations);
     const hdrs: Record<string, string> = {};
     for (const [k, v] of headers) { if (!hdrs[k]) hdrs[k] = v; }
 
@@ -2486,8 +2563,15 @@ function ExplorerPage() {
   const activeEnv = effectiveEnv(tab, activeWs, envs, globalEnv);
   const domain = urlDomain(resolveVars(replacePaths(tab.url, tab.pathParams), activeEnv));
   const hasBody = !['GET', 'HEAD', 'OPTIONS'].includes(tab.method);
+  // Request-body JSON schema for the active endpoint → drives Monaco completions.
+  const bodySchema = useMemo(() => {
+    if (!tab.operationId) return undefined;
+    const op = operations.find(o => o.operationId === tab.operationId);
+    const s = op?.requestBody?.schema;
+    return s && typeof s === 'object' && Object.keys(s).length ? s : undefined;
+  }, [tab.operationId, operations]);
   const hasPathParams = tab.pathParams.length > 0;
-  const resolvedAuthType = effectiveAuth(tab, activeWs).type;
+  const resolvedAuthType = effectiveAuth(tab, activeWs, resolveFolderAuth(tab, activeWs, operations)).type;
   const hasAuth = resolvedAuthType !== 'cli' && resolvedAuthType !== 'none';
 
   const paramCount = tab.params.filter(p => p.key).length + tab.pathParams.filter(p => p.key && p.value).length;
@@ -2496,7 +2580,7 @@ function ExplorerPage() {
     + (activeEnv?.headers?.filter(h => h.enabled && h.key).length ?? 0);
 
   const codeRequest: CodeRequest = useMemo(() => {
-    const { url, headers, body, multipart } = resolveRequest(tab, activeEnv, activeWs);
+    const { url, headers, body, multipart } = resolveRequest(tab, activeEnv, activeWs, operations);
     return {
       method: tab.method, url, headers, body,
       multipart: multipart?.map(p => ({ name: p.name, kind: p.kind, value: p.kind === 'text' ? p.value : undefined, filename: p.kind === 'file' ? p.filename : undefined })),
@@ -2587,6 +2671,34 @@ function ExplorerPage() {
         </>
       )}
 
+      {/* Folder context menu */}
+      {folderCtxMenu && (
+        <>
+          <div className="fixed inset-0 z-[1999]" onClick={() => setFolderCtxMenu(null)} />
+          <div className="ctx-menu" style={{ left: folderCtxMenu.x, top: folderCtxMenu.y }}>
+            <button className="ctx-item" onClick={() => { setFolderAuthPath(folderCtxMenu.folderPath); setFolderCtxMenu(null); }}>
+              <Lock size={12} /> Folder Auth…
+            </button>
+            {authedFolders.has(folderCtxMenu.folderPath) && (
+              <button className="ctx-item ctx-danger" onClick={() => { saveFolderAuth(folderCtxMenu.folderPath, null); setFolderCtxMenu(null); }}>
+                <Trash2 size={12} /> Clear Folder Auth
+              </button>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* Folder auth modal */}
+      {folderAuthPath !== null && (
+        <FolderAuthModal
+          folderPath={folderAuthPath}
+          current={activeWs?.folderAuth?.[folderAuthPath] ?? null}
+          inheritedFrom={activeWs ? { name: activeWs.name, type: activeWs.auth.type } : null}
+          onSave={auth => saveFolderAuth(folderAuthPath, auth)}
+          onClose={() => setFolderAuthPath(null)}
+        />
+      )}
+
       {/* ── Content rows */}
       <div className="flex flex-1 overflow-hidden min-h-0">
 
@@ -2645,7 +2757,9 @@ function ExplorerPage() {
                     ops={operations}
                     onSelect={openEndpoint}
                     activeId={activeOpId}
+                    authedFolders={authedFolders}
                     onContextMenu={(e, op) => { e.preventDefault(); setEpCtxMenu({ x: e.clientX, y: e.clientY, op }); }}
+                    onFolderContextMenu={(e, folderPath) => { e.preventDefault(); setFolderCtxMenu({ x: e.clientX, y: e.clientY, folderPath }); }}
                   />
                 : <div className="empty-state"><span className="text-[12px]">No spec loaded</span></div>
             ) : (
@@ -2729,43 +2843,40 @@ function ExplorerPage() {
           </div>
 
           {/* ── URL bar */}
-          <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--border)] bg-[var(--background)] flex-shrink-0">
+          <div className="flex items-center gap-1.5 px-2.5 py-1.5 border-b border-[var(--border)] bg-[var(--background)] flex-shrink-0">
             {/* Unified method + URL container */}
             <div
-              className="flex items-center flex-1 min-w-0 rounded-lg overflow-hidden transition-all"
+              className="flex items-center flex-1 min-w-0 rounded-md overflow-hidden transition-colors"
               style={{
                 border: '1px solid var(--border)',
                 background: 'var(--input-bg)',
-                height: 36,
+                height: 32,
               }}
-              onFocusCapture={e => (e.currentTarget.style.borderColor = 'var(--border-focus)')}
-              onBlurCapture={e => (e.currentTarget.style.borderColor = 'var(--border)')}
+              onFocusCapture={e => { e.currentTarget.style.borderColor = 'var(--border-focus)'; }}
+              onBlurCapture={e => { e.currentTarget.style.borderColor = 'var(--border)'; }}
             >
               {/* Method select */}
-              <select
-                value={tab.method}
-                onChange={e => upd(tab.id, { method: e.target.value })}
-                style={{
-                  color: MC[tab.method] ?? 'var(--foreground)',
-                  background: 'transparent',
-                  border: 'none',
-                  borderRight: '1px solid var(--border)',
-                  padding: '0 8px 0 12px',
-                  fontFamily: 'GeistMono, ui-monospace, monospace',
-                  fontSize: 10.5,
-                  fontWeight: 700,
-                  letterSpacing: '0.06em',
-                  outline: 'none',
-                  cursor: 'pointer',
-                  flexShrink: 0,
-                  height: '100%',
-                  appearance: 'none',
-                  minWidth: 62,
-                  maxWidth: 78,
-                }}
-              >
-                {METHODS.map(m => <option key={m} value={m}>{m}</option>)}
-              </select>
+              <Select value={tab.method} onValueChange={v => upd(tab.id, { method: v })}>
+                <SelectTrigger
+                  aria-label="HTTP method"
+                  className="h-full min-w-[64px] flex-shrink-0 gap-1 rounded-none border-0 border-r border-border bg-transparent px-2.5 font-mono text-[11px] font-bold tracking-wider shadow-none focus-visible:ring-0"
+                  style={{ color: MC[tab.method] ?? 'var(--foreground)' }}
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {METHODS.map(m => (
+                    <SelectItem
+                      key={m}
+                      value={m}
+                      className="font-mono text-[11px] font-bold tracking-wider"
+                      style={{ color: MC[m] }}
+                    >
+                      {m}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               {/* URL input */}
               <input
                 ref={urlInputRef}
@@ -2774,8 +2885,8 @@ function ExplorerPage() {
                   height: '100%',
                   background: 'transparent',
                   border: 'none',
-                  padding: '0 12px',
-                  fontSize: 13,
+                  padding: '0 11px',
+                  fontSize: 12.5,
                   fontFamily: 'GeistMono, ui-monospace, monospace',
                   color: 'var(--foreground)',
                   outline: 'none',
@@ -2794,18 +2905,18 @@ function ExplorerPage() {
             {/* Intercept rule selector */}
             {interceptRules.length > 0 && (
               <div
-                className="flex items-center gap-1 flex-shrink-0 px-2 rounded-lg border transition-colors"
+                className="flex items-center gap-1 flex-shrink-0 px-2.5 rounded-md border transition-colors"
                 style={{
-                  height: 34,
-                  maxWidth: tab.interceptRuleId ? 140 : 90,
-                  borderColor: tab.interceptRuleId ? 'var(--accent, #6366f1)' : 'var(--border)',
-                  background: tab.interceptRuleId ? 'color-mix(in srgb,var(--accent,#6366f1) 8%,transparent)' : 'var(--input-bg)',
+                  height: 32,
+                  maxWidth: tab.interceptRuleId ? 140 : 88,
+                  borderColor: tab.interceptRuleId ? 'var(--border-hover)' : 'var(--border)',
+                  background: tab.interceptRuleId ? 'var(--elevated)' : 'var(--input-bg)',
                 }}
               >
-                <RouteIcon size={10} style={{ color: tab.interceptRuleId ? 'var(--accent, #6366f1)' : 'var(--placeholder-foreground)', flexShrink: 0 }} />
+                <RouteIcon size={10} style={{ color: tab.interceptRuleId ? 'var(--muted-foreground)' : 'var(--placeholder-foreground)', flexShrink: 0 }} />
                 <select
                   className="bg-transparent border-0 outline-none cursor-pointer font-sans text-[11px] min-w-0 truncate"
-                  style={{ color: tab.interceptRuleId ? 'var(--accent, #6366f1)' : 'var(--placeholder-foreground)', maxWidth: '100%' }}
+                  style={{ color: tab.interceptRuleId ? 'var(--foreground)' : 'var(--placeholder-foreground)', maxWidth: '100%' }}
                   value={tab.interceptRuleId ?? ''}
                   onChange={e => upd(tab.id, { interceptRuleId: e.target.value || undefined })}
                   title="Route request via an intercept rule"
@@ -2818,146 +2929,98 @@ function ExplorerPage() {
               </div>
             )}
             {/* Send button */}
-            <button
+            <Button
               onClick={send}
               disabled={tab.loading || !tab.url}
-              style={{
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                gap: 6, height: 36, padding: '0 18px', borderRadius: 8,
-                fontSize: 13, fontWeight: 600, letterSpacing: '-0.01em',
-                background: 'var(--primary)',
-                color: 'var(--primary-foreground)',
-                border: '1px solid var(--primary)',
-                cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap',
-                fontFamily: 'inherit', userSelect: 'none',
-                transition: 'opacity 0.12s', opacity: !tab.url ? 0.4 : 1,
-                pointerEvents: !tab.url ? 'none' : 'auto',
-              }}
+              className="h-8 flex-shrink-0 rounded-md px-3.5 text-[12.5px] font-semibold gap-1.5"
             >
               {tab.loading
-                ? <><span className="spinner" style={{ width: 11, height: 11 }} /> Sending…</>
-                : <><Send size={12} /> Send</>}
-            </button>
+                ? <><span className="spinner size-3" /> Sending…</>
+                : <><Send size={13} data-icon="inline-start" /> Send</>}
+            </Button>
             {/* Ask AI */}
-            <button
-              title="Ask AI (contextual)"
-              onClick={() => window.dispatchEvent(new CustomEvent('open-ai-panel'))}
-              className="flex items-center justify-center w-[36px] h-[36px] rounded-md border border-[var(--border)] bg-transparent text-[var(--accent)] hover:bg-[color-mix(in_srgb,var(--accent)_8%,transparent)] hover:border-[color-mix(in_srgb,var(--accent)_40%,transparent)] flex-shrink-0 transition-colors cursor-pointer"
-            >
-              <Sparkles size={13} />
-            </button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="size-8 flex-shrink-0 rounded-md text-muted-foreground hover:text-foreground"
+                  onClick={() => window.dispatchEvent(new CustomEvent('open-ai-panel'))}
+                >
+                  <Sparkles size={14} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Ask AI (contextual)</TooltipContent>
+            </Tooltip>
             {/* ⋯ More actions */}
             <div className="relative flex-shrink-0">
-              <button
-                className={cn(
-                  'flex items-center justify-center w-[36px] h-[36px] rounded-md border transition-colors flex-shrink-0',
-                  moreOpen
-                    ? 'border-[var(--border-hover)] bg-[var(--elevated)] text-[var(--foreground)]'
-                    : 'border-[var(--border)] bg-transparent text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:border-[var(--border-hover)]'
-                )}
-                onClick={() => setMoreOpen(v => !v)}
-                title="More actions"
-              >
-                <MoreHorizontal size={14} />
-              </button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="icon" className="size-8 flex-shrink-0 rounded-md text-muted-foreground hover:text-foreground" title="More actions">
+                    <MoreHorizontal />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="min-w-[208px]">
+                  <DropdownMenuItem disabled={!tab.url} onClick={() => setCodeOpen(true)}>
+                    <Code2 />
+                    <span>Copy as code</span>
+                    <span className="ml-auto font-mono text-[10px] text-muted-foreground">cURL · fetch</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem disabled={!tab.url} onClick={() => setSavePopup(p => ({ ...p, open: true, name: p.name || tab.title }))}>
+                    <BookmarkPlus />
+                    <span>Save request</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem disabled={!tab.url} onClick={() => shareRequest()}>
+                    {shareCopied ? <Check /> : <Share2 />}
+                    <span>{shareCopied ? 'Copied!' : 'Share request'}</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => setReqSettingsOpen(v => !v)}>
+                    <SlidersHorizontal />
+                    <span>Request settings</span>
+                    {(tab.timeout > 0 || !tab.followRedirects) && (
+                      <span className="ml-auto rounded bg-brand/15 px-1 text-[9px] text-brand">custom</span>
+                    )}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => upd(tab.id, { response: null, url: '', title: 'New Request', params: [{ key: '', value: '', enabled: true }], pathParams: [], headers: [{ key: '', value: '', enabled: true }], body: '', bodyType: 'none', rawType: 'text/plain', binaryFile: null, formRows: [{ key: '', value: '', enabled: true, kind: 'text' }], auth: { ...DEFAULT_AUTH }, testResults: null })}>
+                    <RotateCcw />
+                    <span>Reset request</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => setProxyGuideOpen(true)}>
+                    <Info />
+                    <span>Proxy &amp; intercept guide</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
 
-              {moreOpen && (
-                <>
-                  <div className="fixed inset-0 z-[1999]" onClick={() => setMoreOpen(false)} />
-                  <div className="absolute right-0 top-full mt-1 z-[2000] rounded-lg border border-[var(--border)] bg-[var(--popover)] shadow-lg py-1 min-w-[200px]">
-                    {/* Code */}
-                    <button
-                      className="ctx-item"
-                      onClick={() => { setCodeOpen(true); setMoreOpen(false); }}
-                      disabled={!tab.url}
-                    >
-                      <Code2 size={13} />
-                      <span>Copy as code</span>
-                      <span className="ml-auto text-[10px] font-mono text-[var(--placeholder-foreground)]">cURL · fetch</span>
-                    </button>
-                    {/* Save */}
-                    <button
-                      className="ctx-item"
-                      onClick={() => { setSavePopup(p => ({ ...p, open: true, name: p.name || tab.title })); setMoreOpen(false); }}
-                      disabled={!tab.url}
-                    >
-                      <BookmarkPlus size={13} />
-                      <span>Save request</span>
-                    </button>
-                    {/* Share */}
-                    <button
-                      className="ctx-item"
-                      onClick={() => { shareRequest(); setMoreOpen(false); }}
-                      disabled={!tab.url}
-                      style={{ color: shareCopied ? 'var(--success,#22c55e)' : undefined }}
-                    >
-                      {shareCopied ? <Check size={13} /> : <Share2 size={13} />}
-                      <span>{shareCopied ? 'Copied!' : 'Share request'}</span>
-                    </button>
-                    <div className="ctx-sep" />
-                    {/* Settings */}
-                    <button
-                      className={cn('ctx-item', (tab.timeout > 0 || !tab.followRedirects) && 'text-[var(--accent)]')}
-                      onClick={() => { setReqSettingsOpen(v => !v); setMoreOpen(false); }}
-                    >
-                      <SlidersHorizontal size={13} />
-                      <span>Request settings</span>
-                      {(tab.timeout > 0 || !tab.followRedirects) && (
-                        <span className="ml-auto text-[9px] bg-[var(--accent-dim)] text-[var(--accent)] rounded px-1">custom</span>
-                      )}
-                    </button>
-                    {/* Reset */}
-                    <button
-                      className="ctx-item"
-                      onClick={() => { upd(tab.id, { response: null, url: '', title: 'New Request', params: [{ key: '', value: '', enabled: true }], pathParams: [], headers: [{ key: '', value: '', enabled: true }], body: '', bodyType: 'none', rawType: 'text/plain', binaryFile: null, formRows: [{ key: '', value: '', enabled: true, kind: 'text' }], auth: { ...DEFAULT_AUTH }, testResults: null }); setMoreOpen(false); }}
-                    >
-                      <RotateCcw size={13} />
-                      <span>Reset request</span>
-                    </button>
-                    <div className="ctx-sep" />
-                    {/* Proxy guide */}
-                    <button
-                      className="ctx-item"
-                      onClick={() => { setProxyGuideOpen(true); setMoreOpen(false); }}
-                    >
-                      <Info size={13} />
-                      <span>Proxy &amp; intercept guide</span>
-                    </button>
-                  </div>
-                </>
-              )}
-
-              {/* Save popup (triggered from More menu) */}
-              {savePopup.open && (
-                <>
-                  <div className="fixed inset-0 z-[1999]" onClick={() => setSavePopup(p => ({ ...p, open: false }))} />
-                  <div
-                    className="absolute right-0 top-full mt-1 z-[2000] rounded-lg border border-[var(--border)] bg-[var(--background)] shadow-lg"
-                    style={{ width: 260, padding: '12px 14px' }}
-                  >
-                    <div className="text-[11px] font-semibold text-[var(--foreground)] mb-2">Save Request</div>
-                    <input
-                      className="input w-full h-7 text-[12px] mb-2"
+              {/* Save dialog (triggered from More menu) */}
+              <Dialog open={savePopup.open} onOpenChange={o => setSavePopup(p => ({ ...p, open: o }))}>
+                <DialogContent className="sm:max-w-[380px]">
+                  <DialogHeader>
+                    <DialogTitle>Save request</DialogTitle>
+                  </DialogHeader>
+                  <div className="flex flex-col gap-3">
+                    <Input
                       placeholder="Name"
                       value={savePopup.name}
                       onChange={e => setSavePopup(p => ({ ...p, name: e.target.value }))}
                       autoFocus
-                      onKeyDown={e => { if (e.key === 'Enter') saveCurrentRequest(); if (e.key === 'Escape') setSavePopup(p => ({ ...p, open: false })); }}
+                      onKeyDown={e => { if (e.key === 'Enter') saveCurrentRequest(); }}
                     />
-                    <input
-                      className="input w-full h-7 text-[12px] mb-3"
+                    <Input
                       placeholder="Folder (optional)"
                       value={savePopup.folder}
                       onChange={e => setSavePopup(p => ({ ...p, folder: e.target.value }))}
-                      onKeyDown={e => { if (e.key === 'Enter') saveCurrentRequest(); if (e.key === 'Escape') setSavePopup(p => ({ ...p, open: false })); }}
+                      onKeyDown={e => { if (e.key === 'Enter') saveCurrentRequest(); }}
                     />
-                    <div className="flex gap-2 justify-end">
-                      <button className="btn btn-ghost btn-sm" onClick={() => setSavePopup(p => ({ ...p, open: false }))}>Cancel</button>
-                      <button className="btn btn-primary btn-sm" onClick={saveCurrentRequest}>Save</button>
-                    </div>
                   </div>
-                </>
-              )}
+                  <DialogFooter>
+                    <Button variant="ghost" size="sm" onClick={() => setSavePopup(p => ({ ...p, open: false }))}>Cancel</Button>
+                    <Button size="sm" onClick={saveCurrentRequest}>Save</Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
 
               {/* Request settings popup (triggered from More menu) */}
               {reqSettingsOpen && (
@@ -3021,7 +3084,7 @@ function ExplorerPage() {
                 {tab.interceptRuleId && interceptRules.find(r => r.id === tab.interceptRuleId) && (
                   <>
                     <span className="text-[10px] text-[var(--placeholder-foreground)]">via</span>
-                    <span className="text-[10.5px] font-medium truncate max-w-[100px]" style={{ color: 'var(--accent, #6366f1)' }}>
+                    <span className="text-[10.5px] font-medium truncate max-w-[100px]" style={{ color: 'var(--brand)' }}>
                       {interceptRules.find(r => r.id === tab.interceptRuleId)!.name}
                     </span>
                   </>
@@ -3079,13 +3142,18 @@ function ExplorerPage() {
                         </button>
                       ))}
                       {tab.bodyType === 'raw' && (
-                        <select className="select h-6 w-[130px] ml-auto text-[11px]" value={tab.rawType} onChange={e => upd(tab.id, { rawType: e.target.value })}>
-                          {RAW_BODY_TYPES.map(rt => <option key={rt.mime} value={rt.mime}>{rt.label}</option>)}
-                        </select>
+                        <Select value={tab.rawType} onValueChange={v => upd(tab.id, { rawType: v })}>
+                          <SelectTrigger size="sm" className="ml-auto h-6 w-[130px] text-[11px]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {RAW_BODY_TYPES.map(rt => <SelectItem key={rt.mime} value={rt.mime}>{rt.label}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
                       )}
                     </div>
                     {tab.bodyType === 'none' && <div className="empty-state text-[12px]">No body</div>}
-                    {tab.bodyType === 'json' && <JsonEditor value={tab.body} onChange={v => upd(tab.id, { body: v })} placeholder={'{\n  "key": "value"\n}'} />}
+                    {tab.bodyType === 'json' && <JsonEditor value={tab.body} onChange={v => upd(tab.id, { body: v })} placeholder={'{\n  "key": "value"\n}'} schema={bodySchema} path={`body-${tab.id}.json`} />}
                     {tab.bodyType === 'form' && (
                       <div className="p-3 flex flex-col gap-3">
                         <FormDataTable rows={tab.formRows} onChange={rows => upd(tab.id, { formRows: rows })} allowFiles={false} />
@@ -3099,7 +3167,9 @@ function ExplorerPage() {
                       </div>
                     )}
                     {tab.bodyType === 'raw' && (
-                      <textarea className="textarea flex-1 rounded-none border-0 resize-none text-[12px] font-mono" placeholder={`Request body… (${tab.rawType})`} value={tab.body} onChange={e => upd(tab.id, { body: e.target.value })} />
+                      <div className="relative flex-1 overflow-hidden">
+                        <CodeEditor value={tab.body} onChange={v => upd(tab.id, { body: v })} language={rawMimeToLang(tab.rawType)} placeholder={`Request body… (${tab.rawType})`} />
+                      </div>
                     )}
                     {tab.bodyType === 'binary' && (
                       <div className="p-4 flex flex-col gap-3 items-start">
@@ -3123,7 +3193,7 @@ function ExplorerPage() {
                   <AuthPanel auth={tab.auth} onChange={a => upd(tab.id, { auth: a })} inheritedFrom={activeWs ? { name: activeWs.name, type: activeWs.auth.type } : null} />
                 )}
                 {reqTab === 'cookies' && <CookiesPanel domain={domain} />}
-                {reqTab === 'payload' && <PayloadPanel tab={tab} activeEnv={activeEnv} ws={activeWs} />}
+                {reqTab === 'payload' && <PayloadPanel tab={tab} activeEnv={activeEnv} ws={activeWs} ops={operations} />}
                 {reqTab === 'tests' && (
                   <TestsPanel
                     code={tab.tests}

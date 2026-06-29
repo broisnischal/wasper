@@ -131,6 +131,21 @@ export interface LogRow {
   created_at: number;
 }
 
+// The active profile is the single source of truth for auth, but the request
+// executors (MCP, AI agent, proxy, workflows) read the `auth_config` 'default'
+// row. This mirrors a profile's config (and its token cache) into that row so
+// the two never drift — call it on every mutation of the active profile.
+function mirrorProfileToAuthConfig(profile: AuthProfileRow): void {
+  db.query(`INSERT INTO auth_config (id, type, config, token_cache, updated_at)
+            VALUES ('default', $type, $config, $token_cache, unixepoch())
+            ON CONFLICT(id) DO UPDATE SET
+              type = excluded.type,
+              config = excluded.config,
+              token_cache = excluded.token_cache,
+              updated_at = unixepoch()`)
+    .run({ $type: profile.type, $config: profile.config, $token_cache: profile.token_cache });
+}
+
 export const dbQueries = {
   getAuthConfig: () =>
     db.query("SELECT * FROM auth_config WHERE id = 'default'").get() as AuthConfigRow | null,
@@ -218,6 +233,10 @@ export const dbQueries = {
     const params: Record<string, string | number | null> = { $id: id };
     for (const [k, v] of Object.entries(patch)) params[`$${k}`] = v as string | number | null;
     db.query(`UPDATE auth_profiles SET ${cols} WHERE id = $id`).run(params);
+    // If the edited profile is the active one, push its new config to auth_config
+    // so executors don't keep using the stale (e.g. expired) token.
+    const updated = db.query('SELECT * FROM auth_profiles WHERE id = ?').get(id) as AuthProfileRow | null;
+    if (updated && updated.is_active === 1) mirrorProfileToAuthConfig(updated);
   },
 
   deleteProfile: (id: string) =>
@@ -228,10 +247,17 @@ export const dbQueries = {
     if (!profile) return;
     db.query('UPDATE auth_profiles SET is_active = 0').run();
     db.query('UPDATE auth_profiles SET is_active = 1 WHERE id = ?').run(id);
-    // Copy profile config to auth_config so execute_api_request uses it
-    db.query(`INSERT INTO auth_config (id, type, config, updated_at) VALUES ('default', $type, $config, unixepoch())
-      ON CONFLICT(id) DO UPDATE SET type=excluded.type, config=excluded.config, updated_at=unixepoch()`)
-      .run({ $type: profile.type, $config: profile.config });
+    // Mirror profile config (and its token cache) to auth_config so the request
+    // executors use it. Resetting token_cache avoids reusing a prior profile's
+    // cached OAuth token.
+    mirrorProfileToAuthConfig(profile);
+  },
+
+  // Re-sync auth_config from the active profile. Heals DBs that drifted under
+  // older builds (which didn't mirror on profile edits); safe to call on boot.
+  reconcileActiveAuthConfig: () => {
+    const active = db.query('SELECT * FROM auth_profiles WHERE is_active = 1 LIMIT 1').get() as AuthProfileRow | null;
+    if (active) mirrorProfileToAuthConfig(active);
   },
 
   // ── Saved requests ──────────────────────────────────────────────────────────

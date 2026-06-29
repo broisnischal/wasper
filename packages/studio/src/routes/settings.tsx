@@ -179,7 +179,7 @@ function SettingsPage() {
                       <div className="text-[13px] font-medium text-[var(--foreground)]">{label}</div>
                       <div className="text-[12px] text-[var(--muted-foreground)] mt-0.5 leading-snug">{hint}</div>
                     </div>
-                    <Switch checked={features[key]} onChange={v => toggleFeature(key, v)} />
+                    <Switch checked={features[key]} onCheckedChange={v => toggleFeature(key, v)} />
                   </div>
                 ))}
               </div>
@@ -311,7 +311,7 @@ function SettingsPage() {
                   <div className="text-[13px] font-medium text-[var(--foreground)]">Enable proxy</div>
                   <div className="text-[12px] text-[var(--muted-foreground)] mt-0.5">Route all outgoing requests through the proxy.</div>
                 </div>
-                <Switch checked={s.proxy.enabled} onChange={v => set('proxy', { enabled: v })} />
+                <Switch checked={s.proxy.enabled} onCheckedChange={v => set('proxy', { enabled: v })} />
               </div>
 
               {s.proxy.enabled && (
@@ -377,7 +377,7 @@ function SettingsPage() {
                       <div className="text-[13px] font-medium text-[var(--foreground)]">{label}</div>
                       <div className="text-[12px] text-[var(--muted-foreground)] mt-0.5">{hint}</div>
                     </div>
-                    <Switch checked={s.request[key]} onChange={v => set('request', { [key]: v })} />
+                    <Switch checked={s.request[key]} onCheckedChange={v => set('request', { [key]: v })} />
                   </div>
                 ))}
               </div>

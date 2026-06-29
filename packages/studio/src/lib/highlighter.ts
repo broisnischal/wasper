@@ -15,4 +15,15 @@ export function getHighlighter(): Promise<Highlighter> {
   return promise;
 }
 
-if (typeof window !== 'undefined') getHighlighter();
+// Warm the highlighter when the browser is idle — never block first paint /
+// hydration. (Shiki + its grammars are ~MBs; eager-loading them at startup was
+// a major source of perceived lag.)
+if (typeof window !== 'undefined') {
+  const warm = () => getHighlighter();
+  if ('requestIdleCallback' in window) {
+    (window as unknown as { requestIdleCallback: (cb: () => void, o?: { timeout: number }) => void })
+      .requestIdleCallback(warm, { timeout: 2500 });
+  } else {
+    setTimeout(warm, 1200);
+  }
+}

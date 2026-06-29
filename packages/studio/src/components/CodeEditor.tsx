@@ -1,0 +1,188 @@
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import type { OnMount, OnChange } from '@monaco-editor/react';
+import { useApp } from '../context';
+
+// Loaded lazily so Monaco (and its workers) never touch the SSR bundle.
+const LazyEditor = React.lazy(() => import('@monaco-editor/react'));
+
+export interface CodeEditorHandle {
+  format: () => void;
+}
+
+interface CodeEditorProps {
+  value: string;
+  onChange: (v: string) => void;
+  language?: string;
+  placeholder?: string;
+  readOnly?: boolean;
+  /** Hide the line-number gutter (handy for short inline bodies). */
+  lineNumbers?: boolean;
+  /** JSON Schema to drive completions + validation (only meaningful for json). */
+  schema?: object;
+  /**
+   * Stable model path. Distinct paths give each editor its own model so schemas
+   * don't leak between tabs. Defaults to a per-instance id.
+   */
+  path?: string;
+}
+
+const FONT = "'JetBrains Mono', GeistMono, ui-monospace, 'SFMono-Regular', monospace";
+
+let MODEL_SEQ = 0;
+
+/**
+ * Full Monaco editor wired to the studio theme. Renders a plain pre-styled
+ * fallback during SSR / initial load so layout never shifts.
+ */
+export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(function CodeEditor(
+  { value, onChange, language = 'json', placeholder, readOnly = false, lineNumbers = true, schema, path },
+  ref,
+) {
+  const { theme } = useApp();
+  const [ready, setReady] = useState(false);
+  const [showPlaceholder, setShowPlaceholder] = useState(!value);
+  const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
+  // A stable, unique model URI for this editor instance.
+  const modelPath = useRef(path ?? `body-${++MODEL_SEQ}.json`);
+
+  // Kick off the client-only Monaco setup (workers + themes) before rendering.
+  useEffect(() => {
+    let alive = true;
+    import('../lib/monaco').then(m => m.MONACO_READY).then(() => { if (alive) setReady(true); });
+    return () => { alive = false; };
+  }, []);
+
+  useEffect(() => { setShowPlaceholder(!value); }, [value]);
+
+  // Keep the latest schema in a ref so binding works regardless of mount timing.
+  const schemaRef = useRef(schema);
+  schemaRef.current = schema;
+  const boundUri = useRef<string | null>(null);
+
+  // Bind the JSON schema to this editor's model — works whether the model is
+  // ready before or after this runs, since handleMount calls it too.
+  const bindSchema = React.useCallback(() => {
+    if (language !== 'json') return;
+    const uri = editorRef.current?.getModel()?.uri.toString() ?? null;
+    if (!uri) return;
+    boundUri.current = uri;
+    const s = schemaRef.current;
+    import('../lib/monaco').then(m => {
+      if (s && Object.keys(s).length) m.registerJsonSchema(uri, s);
+      else m.unregisterJsonSchema(uri);
+    });
+  }, [language]);
+
+  useEffect(() => {
+    if (ready) bindSchema();
+  }, [ready, schema, bindSchema]);
+
+  // Drop the schema binding when the editor unmounts.
+  useEffect(() => () => {
+    if (boundUri.current) import('../lib/monaco').then(m => m.unregisterJsonSchema(boundUri.current!));
+  }, []);
+
+  React.useImperativeHandle(ref, () => ({
+    format: () => {
+      editorRef.current?.getAction('editor.action.formatDocument')?.run();
+    },
+  }), []);
+
+  const handleMount: OnMount = (editor) => {
+    editorRef.current = editor;
+    bindSchema();
+  };
+
+  const handleChange: OnChange = (v) => {
+    const next = v ?? '';
+    setShowPlaceholder(!next);
+    onChange(next);
+  };
+
+  const monacoTheme = theme === 'light' ? 'wasper-light' : 'wasper-dark';
+
+  // Memoized so a new object isn't created on every parent re-render — passing a
+  // fresh options object made @monaco-editor/react call editor.updateOptions() on
+  // every keystroke, which re-applied config and re-tokenized the view (the
+  // highlight "lag"/flicker). Only rebuild when something here actually changes.
+  const options = useMemo(() => ({
+    readOnly,
+    fontFamily: FONT,
+    fontSize: 12.5,
+    lineHeight: 20,
+    fontLigatures: true,
+    lineNumbers: (lineNumbers ? 'on' : 'off') as 'on' | 'off',
+    lineNumbersMinChars: 3,
+    lineDecorationsWidth: 8,
+    glyphMargin: false,
+    minimap: { enabled: false },
+    scrollBeyondLastLine: false,
+    renderLineHighlight: 'none' as const,
+    padding: { top: 10, bottom: 10 },
+    folding: true,
+    tabSize: 2,
+    automaticLayout: true,
+    formatOnPaste: true,
+    // Neutral braces that follow the theme delimiter color (no rainbow).
+    bracketPairColorization: { enabled: false },
+    guides: { bracketPairs: false, highlightActiveBracketPair: false, indentation: true },
+    matchBrackets: 'near' as const,
+    scrollbar: { verticalScrollbarSize: 8, horizontalScrollbarSize: 8, useShadows: false },
+    // Animations that add perceived input latency while typing — off for snappiness.
+    smoothScrolling: false,
+    cursorBlinking: 'blink' as const,
+    cursorSmoothCaretAnimation: 'off' as const,
+    overviewRulerLanes: 0,
+    hideCursorInOverviewRuler: true,
+    overviewRulerBorder: false,
+    renderWhitespace: 'none' as const,
+    stickyScroll: { enabled: false },
+    wordWrap: (language === 'json' ? 'off' : 'on') as 'on' | 'off',
+    fixedOverflowWidgets: true,
+    quickSuggestions: { other: true, comments: false, strings: true },
+    suggestOnTriggerCharacters: true,
+    tabCompletion: 'on' as const,
+  }), [readOnly, lineNumbers, language]);
+
+  return (
+    <div className="relative h-full w-full" style={{ background: 'var(--background)' }}>
+      {ready ? (
+        <React.Suspense fallback={null}>
+          <LazyEditor
+            value={value}
+            language={language}
+            path={modelPath.current}
+            theme={monacoTheme}
+            onMount={handleMount}
+            onChange={handleChange}
+            options={options}
+          />
+        </React.Suspense>
+      ) : (
+        // Pre-hydration fallback — same font/metrics to avoid a visible jump.
+        <pre
+          className="absolute inset-0 m-0 overflow-auto text-[var(--foreground)]"
+          style={{ padding: '10px 16px', fontFamily: FONT, fontSize: 12.5, lineHeight: '20px', whiteSpace: 'pre' }}
+        >
+          {value}
+        </pre>
+      )}
+      {showPlaceholder && placeholder && (
+        <div
+          className="pointer-events-none absolute top-0 text-[var(--placeholder-foreground)]"
+          style={{
+            left: lineNumbers ? 60 : 16,
+            padding: '10px 0',
+            fontFamily: FONT,
+            fontSize: 12.5,
+            lineHeight: '20px',
+            whiteSpace: 'pre',
+            opacity: 0.5,
+          }}
+        >
+          {placeholder}
+        </div>
+      )}
+    </div>
+  );
+});

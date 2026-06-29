@@ -1,35 +1,48 @@
 import { HeadContent, Outlet, Scripts, createRootRoute, useRouterState } from '@tanstack/react-router';
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, lazy, Suspense } from 'react';
 import { Sidebar } from '../components/Sidebar';
 import { CommandPalette } from '../components/CommandPalette';
 import { HotkeyHelp } from '../components/HotkeyHelp';
-import { AiPanel } from '../components/AiPanel';
-import { DecoderPanel } from '../components/DecoderPanel';
+// Heavy, on-demand panels — AiPanel pulls in Markdown + shiki, DecoderPanel its own
+// deps. Lazy-loaded so none of that lands in the initial bundle / startup work.
+const AiPanel = lazy(() => import('../components/AiPanel').then(m => ({ default: m.AiPanel })));
+const DecoderPanel = lazy(() => import('../components/DecoderPanel').then(m => ({ default: m.DecoderPanel })));
 import { AppContext, DEFAULT_FEATURES, type Features, useApp } from '../context';
-import { Sun, Moon } from 'lucide-react';
-import { apiClient, getCliUrl, setCliUrl, clearCliUrl, getCliToken, setCliToken, clearCliToken, LOG_WS_URL } from '../lib/api';
+import { Sun, Moon, RefreshCw, Loader2, ShieldCheck, AlertCircle } from 'lucide-react';
+import { apiClient, getCliUrl, setCliUrl, clearCliUrl, getCliToken, setCliToken, clearCliToken, authHeaders, LOG_WS_URL } from '../lib/api';
 import { injectFonts } from '../fonts';
 import {
   listEnvironments, getActiveEnvId, setActiveEnvId as persistActiveEnv,
   type Environment,
 } from '../lib/env';
+import { TooltipProvider } from '../components/ui/tooltip';
+import { Toaster } from '../components/ui/sonner';
 import appCss from '../styles.css?url';
 
 export const Route = createRootRoute({
   head: () => ({
     meta: [
       { charSet: 'utf-8' },
-      { name: 'viewport', content: 'width=device-width, initial-scale=1' },
+      { name: 'viewport', content: 'width=device-width, initial-scale=1, viewport-fit=cover' },
       { title: 'Wasper Studio' },
+      { name: 'theme-color', content: '#000000' },
+      { name: 'apple-mobile-web-app-capable', content: 'yes' },
+      { name: 'apple-mobile-web-app-status-bar-style', content: 'black-translucent' },
+      { name: 'apple-mobile-web-app-title', content: 'Wasper' },
     ],
-    links: [{ rel: 'stylesheet', href: appCss }],
+    links: [
+      { rel: 'stylesheet', href: appCss },
+      { rel: 'manifest', href: '/manifest.webmanifest' },
+      { rel: 'apple-touch-icon', href: '/logo192.png' },
+      { rel: 'icon', href: '/favicon.ico' },
+    ],
   }),
   shellComponent: RootDocument,
 });
 
 function RootDocument({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" data-theme="dark">
+    <html lang="en" data-theme="dark" className="dark">
       <head>
         <HeadContent />
         {/* Prevent theme flash before React hydrates */}
@@ -37,6 +50,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
           try {
             var t = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
             document.documentElement.setAttribute('data-theme', t);
+            document.documentElement.classList.toggle('dark', t === 'dark');
           } catch(e) {}
         ` }} />
       </head>
@@ -173,11 +187,38 @@ function OfflineCard() {
   const [tokenInput, setTokenInput] = useState(getCliToken() ?? '');
   const [showConnect, setShowConnect] = useState(currentUrl !== 'http://localhost:3388');
   const [installTab, setInstallTab] = useState<InstallTab>('curl');
+  const [probing, setProbing] = useState(false);
+  const [probeErr, setProbeErr] = useState<string | null>(null);
   const isUnsafeMix = typeof window !== 'undefined'
     && window.location.protocol === 'https:'
     && urlInput.startsWith('http:')
     && !urlInput.startsWith('http://localhost')
     && !urlInput.startsWith('http://127.0.0.1');
+
+  // A deployed (HTTPS) studio reaching a daemon on the user's machine.
+  const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
+  const targetsLocal = /\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/.test(currentUrl);
+
+  // Explicit, user-gesture connection attempt. Crucially this is what triggers the
+  // browser's Local Network Access permission prompt — the background WebSocket
+  // retry can't, so a denied/unprompted user only ever sees "offline" without it.
+  const tryConnect = async () => {
+    setProbing(true);
+    setProbeErr(null);
+    try {
+      const res = await fetch(`${getCliUrl()}/api/features`, { headers: authHeaders(), cache: 'no-store' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      window.location.reload();
+    } catch {
+      setProbeErr(
+        isHttps && targetsLocal
+          ? 'Still can’t reach it. Make sure wasper is running locally, then choose “Allow” if your browser asks to access your local network.'
+          : 'Could not reach the daemon at that URL. Make sure it’s running and reachable.',
+      );
+    } finally {
+      setProbing(false);
+    }
+  };
 
   const save = () => { setCliUrl(urlInput); setCliToken(tokenInput.trim()); window.location.reload(); };
   const reset = () => { clearCliUrl(); clearCliToken(); window.location.reload(); };
@@ -235,18 +276,68 @@ function OfflineCard() {
             Get started with Wasper Studio
           </h1>
           <p style={{ marginTop: 8, fontSize: 14, color: 'var(--muted-foreground)', lineHeight: 1.6, margin: '8px 0 0' }}>
-            Follow the steps below to connect the studio to your OpenAPI spec.
+            The studio runs your requests through a small daemon on your own machine. Connect to it to get started.
           </p>
-          <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--muted-foreground)' }}>
-            Connecting to{' '}
-            <code style={{
-              fontFamily: 'monospace', fontSize: 12,
-              background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
-              borderRadius: 5, padding: '2px 7px', color: 'rgba(255,255,255,0.8)',
-            }}>
-              {currentUrl}
-            </code>
-            <span className="connecting-dots"><span /><span /><span /></span>
+
+          {/* ── Connect hero: primary action + local-network permission prompt ── */}
+          <div style={{
+            marginTop: 22, padding: 18, borderRadius: 14,
+            border: '1px solid color-mix(in srgb, var(--foreground) 12%, transparent)',
+            background: 'color-mix(in srgb, var(--foreground) 3.5%, transparent)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 12 }}>
+              <span style={{
+                width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+                background: 'var(--warning)', animation: 'pulse 1.6s ease-in-out infinite',
+              }} />
+              <span style={{ fontSize: 13, color: 'var(--muted-foreground)' }}>
+                Waiting for{' '}
+                <code style={{
+                  fontFamily: 'monospace', fontSize: 12,
+                  background: 'color-mix(in srgb, var(--foreground) 7%, transparent)',
+                  border: '1px solid color-mix(in srgb, var(--foreground) 12%, transparent)',
+                  borderRadius: 5, padding: '2px 7px', color: 'var(--foreground)',
+                }}>
+                  {currentUrl}
+                </code>
+              </span>
+            </div>
+
+            {isHttps && targetsLocal && (
+              <p style={{
+                display: 'flex', gap: 8, alignItems: 'flex-start',
+                fontSize: 12.5, color: 'var(--muted-foreground)', lineHeight: 1.55, margin: '0 0 14px',
+              }}>
+                <ShieldCheck size={15} style={{ flexShrink: 0, marginTop: 1, color: 'var(--accent)' }} />
+                <span>
+                  Your requests stay on your computer — nothing is sent to this site. Your browser may ask to{' '}
+                  <strong style={{ color: 'var(--foreground)' }}>access your local network</strong>; choose{' '}
+                  <strong style={{ color: 'var(--foreground)' }}>Allow</strong> to connect.
+                </span>
+              </p>
+            )}
+
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button className="btn btn-primary" onClick={tryConnect} disabled={probing} style={{ gap: 7 }}>
+                {probing
+                  ? <Loader2 size={14} className="animate-spin" />
+                  : <RefreshCw size={14} />}
+                {probing ? 'Connecting…' : (isHttps && targetsLocal ? 'Allow & connect' : 'Retry connection')}
+              </button>
+              <button className="btn btn-ghost" onClick={() => setShowConnect(s => !s)} style={{ fontSize: 13 }}>
+                Use a different URL
+              </button>
+            </div>
+
+            {probeErr && (
+              <p style={{
+                display: 'flex', gap: 7, alignItems: 'flex-start',
+                marginTop: 12, marginBottom: 0, fontSize: 12.5, color: 'var(--warning)', lineHeight: 1.5,
+              }}>
+                <AlertCircle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+                <span>{probeErr}</span>
+              </p>
+            )}
           </div>
         </div>
 
@@ -401,6 +492,9 @@ function AppShell() {
   const pendingOpRef = useRef<ParsedOp | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
   const [aiPanelOpen, setAiPanelOpen] = useState(false);
+  // AiPanel slides via transform, so keep it mounted once first opened (the lazy
+  // chunk still loads only on first use).
+  const [aiMounted, setAiMounted] = useState(false);
   const [decoderOpen, setDecoderOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     try { return localStorage.getItem('sidebar_collapsed') === '1'; } catch { return false; }
@@ -431,6 +525,16 @@ function AppShell() {
     import('../components/HotkeysLayer').then(m => setHotkeysLayer(() => m.HotkeysLayer));
   }, []);
 
+  // Register the PWA service worker (generated by vite-plugin-pwa → /sw.js).
+  // autoUpdate SW claims clients + skips waiting, so new builds take over on reload.
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+    if (import.meta.env.DEV) return; // SW only in production builds
+    const register = () => navigator.serviceWorker.register('/sw.js').catch(() => {});
+    if (document.readyState === 'complete') register();
+    else { window.addEventListener('load', register, { once: true }); }
+  }, []);
+
   // Inject fonts + restore theme on mount
   useEffect(() => {
     injectFonts();
@@ -442,17 +546,51 @@ function AppShell() {
   // Apply theme to <html>
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
+    document.documentElement.classList.toggle('dark', theme === 'dark');
     localStorage.setItem('theme', theme);
   }, [theme]);
 
   const toggleTheme = () => setTheme(t => t === 'dark' ? 'light' : 'dark');
 
-  // WebSocket drives connection state — no HTTP polling; WS open/close IS the health check
+  // Connection is gated on an HTTP health check, not the log WebSocket. A deployed
+  // (HTTPS) studio can reach the local daemon over HTTP (granted via Private Network
+  // Access) even when ws://localhost is blocked — so HTTP is the source of truth and
+  // the WebSocket is layered on top purely for live logs / server events.
   useEffect(() => {
     let dead = false;
-    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let wsRetry: ReturnType<typeof setTimeout> | null = null;
+    let httpRetry: ReturnType<typeof setTimeout> | null = null;
+    let loaded = false;
 
-    const connect = () => {
+    const loadOnce = () => {
+      if (loaded) return;
+      loaded = true;
+      apiClient<Features>('/api/features').then(setFeaturesState).catch(() => {});
+      apiClient<ParsedOp[]>('/api/spec/endpoints').then(setOperations).catch(() => {});
+      // Notify pages that may hold stale status (OverviewPage, ExplorerPage)
+      window.dispatchEvent(new CustomEvent('cli-spec-changed'));
+    };
+
+    const wsOpen = () => wsRef.current?.readyState === WebSocket.OPEN;
+
+    const httpProbe = async () => {
+      if (dead) return;
+      try {
+        const res = await fetch(`${getCliUrl()}/api/features`, { headers: authHeaders(), cache: 'no-store' });
+        if (!res.ok) throw new Error(String(res.status));
+        if (dead) return;
+        setConnected(true);
+        loadOnce();
+      } catch {
+        if (dead || wsOpen()) return; // WS may still be carrying the connection
+        setConnected(false);
+      } finally {
+        // Poll only while the WS isn't providing liveness; once it's open we lean on it.
+        if (!dead && !wsOpen()) httpRetry = setTimeout(httpProbe, 4000);
+      }
+    };
+
+    const connectWs = () => {
       if (dead) return;
       const ws = new WebSocket(LOG_WS_URL);
       wsRef.current = ws;
@@ -461,17 +599,17 @@ function AppShell() {
         if (dead) return;
         setConnected(true);
         setWsConnected(true);
-        apiClient<Features>('/api/features').then(setFeaturesState).catch(() => {});
-        apiClient<ParsedOp[]>('/api/spec/endpoints').then(setOperations).catch(() => {});
-        // Notify pages that may hold stale status (OverviewPage, ExplorerPage)
+        if (httpRetry) { clearTimeout(httpRetry); httpRetry = null; } // WS is live; stop polling
+        loadOnce();
         window.dispatchEvent(new CustomEvent('cli-spec-changed'));
       };
 
       ws.onclose = () => {
         if (dead) return;
-        setConnected(false);
         setWsConnected(false);
-        retryTimer = setTimeout(connect, 3000);
+        wsRetry = setTimeout(connectWs, 3000);
+        // Re-check over HTTP so a blocked/dropped WS doesn't read as fully offline.
+        if (!httpRetry) httpProbe();
       };
 
       ws.onerror = () => ws.close();
@@ -496,10 +634,12 @@ function AppShell() {
       };
     };
 
-    connect();
+    httpProbe();
+    connectWs();
     return () => {
       dead = true;
-      if (retryTimer) clearTimeout(retryTimer);
+      if (wsRetry) clearTimeout(wsRetry);
+      if (httpRetry) clearTimeout(httpRetry);
       wsRef.current?.close();
       wsRef.current = null;
     };
@@ -516,7 +656,7 @@ function AppShell() {
 
   // AI panel open event
   useEffect(() => {
-    const handler = () => setAiPanelOpen(true);
+    const handler = () => { setAiMounted(true); setAiPanelOpen(true); };
     window.addEventListener('open-ai-panel', handler);
     return () => window.removeEventListener('open-ai-panel', handler);
   }, []);
@@ -536,16 +676,20 @@ function AppShell() {
   // Loading state: null = still checking (skip for public routes)
   if (connected === null && !isPublic) {
     return (
-      <div className="flex h-screen flex-col items-center justify-center bg-[var(--background)]" style={{ animation: 'fade-in 0.2s ease' }}>
-        <div className="flex flex-col items-center gap-5 text-center">
-          <div className="flex size-12 items-center justify-center rounded-2xl bg-[var(--foreground)]">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--background)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" />
-            </svg>
+      <div className="flex h-screen flex-col items-center justify-center bg-background" style={{ animation: 'fade-in 0.2s ease' }}>
+        <div className="flex flex-col items-center gap-7 text-center">
+          <div className="relative flex items-center justify-center">
+            <span className="boot-ring" aria-hidden="true" />
+            <span className="boot-ring boot-ring-2" aria-hidden="true" />
+            <div className="relative flex size-14 items-center justify-center rounded-2xl bg-foreground text-background shadow-xl">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" />
+              </svg>
+            </div>
           </div>
-          <div>
-            <div className="text-[18px] font-bold tracking-tight text-[var(--foreground)]">Wasper Studio</div>
-            <div className="mt-2.5 flex items-center justify-center gap-2 text-[13px] text-[var(--muted-foreground)]">
+          <div className="flex flex-col items-center gap-2.5">
+            <div className="text-[19px] font-semibold tracking-tight text-foreground">Wasper Studio</div>
+            <div className="flex items-center gap-2 text-[13px] text-muted-foreground">
               Connecting to CLI
               <span className="connecting-dots"><span /><span /><span /></span>
             </div>
@@ -580,8 +724,16 @@ function AppShell() {
             onSelect={handleCmdSelect}
           />
           <HotkeyHelp open={helpOpen} onClose={() => setHelpOpen(false)} />
-          <AiPanel open={aiPanelOpen} onClose={() => setAiPanelOpen(false)} />
-          <DecoderPanel open={decoderOpen} onClose={() => setDecoderOpen(false)} />
+          {aiMounted && (
+            <Suspense fallback={null}>
+              <AiPanel open={aiPanelOpen} onClose={() => setAiPanelOpen(false)} />
+            </Suspense>
+          )}
+          {decoderOpen && (
+            <Suspense fallback={null}>
+              <DecoderPanel open={decoderOpen} onClose={() => setDecoderOpen(false)} />
+            </Suspense>
+          )}
         </>
       )}
     </>
@@ -595,14 +747,17 @@ function AppShell() {
       features, setFeatures: setFeaturesState,
       wsConnected,
     }}>
-      {HotkeysLayer ? (
-        <HotkeysLayer
-          onHelpToggle={() => setHelpOpen(v => !v)}
-          onHelpClose={() => setHelpOpen(false)}
-        >
-          {main}
-        </HotkeysLayer>
-      ) : main}
+      <TooltipProvider delayDuration={300}>
+        {HotkeysLayer ? (
+          <HotkeysLayer
+            onHelpToggle={() => setHelpOpen(v => !v)}
+            onHelpClose={() => setHelpOpen(false)}
+          >
+            {main}
+          </HotkeysLayer>
+        ) : main}
+        <Toaster position="bottom-right" />
+      </TooltipProvider>
     </AppContext.Provider>
   );
 }
