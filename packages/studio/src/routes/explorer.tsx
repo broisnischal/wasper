@@ -37,7 +37,7 @@ import {
   Bookmark, BookmarkPlus, Share2, Route as RouteIcon,
   FlaskConical, SlidersHorizontal, ShieldAlert, Terminal, Globe, Info,
   CheckCircle2, XCircle, Clock, RefreshCcw, MoreHorizontal,
-  Rows2, Columns2, ChevronsUpDown, FoldVertical, UnfoldVertical, PanelLeftClose, PanelLeftOpen, Sparkles,
+  Rows2, Columns2, FoldVertical, UnfoldVertical, PanelLeftClose, PanelLeftOpen, Sparkles,
 } from 'lucide-react';
 
 export const Route = createFileRoute('/explorer')({ component: ExplorerPage });
@@ -1363,6 +1363,8 @@ function NetworkInfoPanel({ url, status, statusText, headers, networkInfo, size,
   );
 }
 
+const NOOP = () => {};
+
 function ResponsePanel({ response, loading }: { response: ResponseResult | null; loading: boolean }) {
   type RespView = 'body' | 'headers' | 'cookies' | 'raw' | 'preview' | 'schema' | 'timing' | 'network';
   const VALID_VIEWS: RespView[] = ['body', 'headers', 'cookies', 'raw', 'preview', 'schema', 'timing', 'network'];
@@ -1624,7 +1626,7 @@ function ResponsePanel({ response, loading }: { response: ResponseResult | null;
           ) : isJson ? (
             bodyMode === 'tree'
               ? <JsonTree data={filtered} controlsRef={treeControls} />
-              : <JsonViewer text={filteredText} lang="json" />
+              : <CodeEditor value={filteredText} onChange={NOOP} language="json" readOnly />
           ) : isHtml ? (
             <div className="flex-1 flex flex-col overflow-hidden">
               <JsonViewer text={response.body} />
@@ -1636,7 +1638,7 @@ function ResponsePanel({ response, loading }: { response: ResponseResult | null;
               </div>
             </div>
           ) : (
-            <JsonViewer text={response.body} />
+            <CodeEditor value={response.body} onChange={NOOP} language="plaintext" readOnly />
           )
         )}
 
@@ -2844,14 +2846,14 @@ function ExplorerPage() {
           <div className="flex items-center gap-1.5 px-2.5 py-1.5 border-b border-[var(--border)] bg-[var(--background)] flex-shrink-0">
             {/* Unified method + URL container */}
             <div
-              className="flex items-center flex-1 min-w-0 rounded-lg overflow-hidden transition-all"
+              className="flex items-center flex-1 min-w-0 rounded-md overflow-hidden transition-colors"
               style={{
                 border: '1px solid var(--border)',
                 background: 'var(--input-bg)',
-                height: 36,
+                height: 32,
               }}
-              onFocusCapture={e => { e.currentTarget.style.borderColor = 'var(--brand)'; e.currentTarget.style.boxShadow = '0 0 0 3px var(--brand-ring)'; }}
-              onBlurCapture={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.boxShadow = 'none'; }}
+              onFocusCapture={e => { e.currentTarget.style.borderColor = 'var(--border-focus)'; }}
+              onBlurCapture={e => { e.currentTarget.style.borderColor = 'var(--border)'; }}
             >
               {/* Method select */}
               <Select value={tab.method} onValueChange={v => upd(tab.id, { method: v })}>
@@ -2883,8 +2885,8 @@ function ExplorerPage() {
                   height: '100%',
                   background: 'transparent',
                   border: 'none',
-                  padding: '0 12px',
-                  fontSize: 13,
+                  padding: '0 11px',
+                  fontSize: 12.5,
                   fontFamily: 'GeistMono, ui-monospace, monospace',
                   color: 'var(--foreground)',
                   outline: 'none',
@@ -2903,18 +2905,18 @@ function ExplorerPage() {
             {/* Intercept rule selector */}
             {interceptRules.length > 0 && (
               <div
-                className="flex items-center gap-1 flex-shrink-0 px-2.5 rounded-lg border transition-colors"
+                className="flex items-center gap-1 flex-shrink-0 px-2.5 rounded-md border transition-colors"
                 style={{
-                  height: 36,
+                  height: 32,
                   maxWidth: tab.interceptRuleId ? 140 : 88,
-                  borderColor: tab.interceptRuleId ? 'var(--brand)' : 'var(--border)',
-                  background: tab.interceptRuleId ? 'color-mix(in srgb,var(--brand) 8%,transparent)' : 'var(--input-bg)',
+                  borderColor: tab.interceptRuleId ? 'var(--border-hover)' : 'var(--border)',
+                  background: tab.interceptRuleId ? 'var(--elevated)' : 'var(--input-bg)',
                 }}
               >
-                <RouteIcon size={10} style={{ color: tab.interceptRuleId ? 'var(--brand)' : 'var(--placeholder-foreground)', flexShrink: 0 }} />
+                <RouteIcon size={10} style={{ color: tab.interceptRuleId ? 'var(--muted-foreground)' : 'var(--placeholder-foreground)', flexShrink: 0 }} />
                 <select
                   className="bg-transparent border-0 outline-none cursor-pointer font-sans text-[11px] min-w-0 truncate"
-                  style={{ color: tab.interceptRuleId ? 'var(--brand)' : 'var(--placeholder-foreground)', maxWidth: '100%' }}
+                  style={{ color: tab.interceptRuleId ? 'var(--foreground)' : 'var(--placeholder-foreground)', maxWidth: '100%' }}
                   value={tab.interceptRuleId ?? ''}
                   onChange={e => upd(tab.id, { interceptRuleId: e.target.value || undefined })}
                   title="Route request via an intercept rule"
@@ -2942,7 +2944,7 @@ function ExplorerPage() {
                 <Button
                   variant="outline"
                   size="icon"
-                  className="size-8 flex-shrink-0 rounded-md text-brand hover:text-brand"
+                  className="size-8 flex-shrink-0 rounded-md text-muted-foreground hover:text-foreground"
                   onClick={() => window.dispatchEvent(new CustomEvent('open-ai-panel'))}
                 >
                   <Sparkles size={14} />
@@ -2954,7 +2956,7 @@ function ExplorerPage() {
             <div className="relative flex-shrink-0">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="icon" className="size-9 flex-shrink-0 rounded-lg" title="More actions">
+                  <Button variant="outline" size="icon" className="size-8 flex-shrink-0 rounded-md text-muted-foreground hover:text-foreground" title="More actions">
                     <MoreHorizontal />
                   </Button>
                 </DropdownMenuTrigger>
