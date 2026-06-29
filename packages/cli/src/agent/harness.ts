@@ -116,7 +116,7 @@ async function fetchWithRetry(
   opts: RequestInit,
   emit: Emit,
   signal?: AbortSignal,
-  maxRetries = 4,
+  maxRetries = 6,
 ): Promise<Response> {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     const stepSignal = signal;
@@ -140,7 +140,7 @@ async function fetchWithRetry(
     const retryAfter = parseInt(res.headers.get('retry-after') ?? '0', 10);
     const delay = retryAfter > 0
       ? retryAfter * 1000
-      : Math.min(1000 * Math.pow(2, attempt) + Math.random() * 300, 30_000);
+      : Math.min(1000 * Math.pow(2, attempt) + Math.random() * 300, 60_000);
 
     const label = res.status === 429 ? 'Rate limited' : `Server error ${res.status}`;
     emit({ type: 'info', message: `${label} — retrying in ${Math.round(delay / 1000)}s… (attempt ${attempt + 1}/${maxRetries})` });
@@ -229,12 +229,52 @@ async function* readSSE(body: ReadableStream<Uint8Array>): AsyncGenerator<Record
 
 // ── Provider: Anthropic ───────────────────────────────────────────────────────
 
-function buildAnthropicTools(schemas: ToolSchema[]) {
-  return schemas.map(s => ({
+function buildAnthropicTools(schemas: ToolSchema[], enableCache: boolean) {
+  const tools: Array<Record<string, unknown>> = schemas.map(s => ({
     name: s.name,
     description: s.description,
     input_schema: { type: 'object', properties: s.params, required: s.required },
   }));
+  // Cache the whole tools block (it's large and static for the run). The breakpoint
+  // on the last tool covers every tool definition above it.
+  if (enableCache && tools.length) {
+    tools[tools.length - 1] = { ...tools[tools.length - 1], cache_control: { type: 'ephemeral' } };
+  }
+  return tools;
+}
+
+// Add an ephemeral cache breakpoint to a message's last content block without
+// mutating the stored message (cache_control must not accumulate across turns).
+function withCacheBreakpoint(msg: Msg): Msg {
+  const content = (msg as { content: unknown }).content;
+  if (typeof content === 'string') {
+    return { ...msg, content: [{ type: 'text', text: content, cache_control: { type: 'ephemeral' } }] } as Msg;
+  }
+  if (Array.isArray(content) && content.length) {
+    const blocks = content.map((b, i) =>
+      i === content.length - 1 && b && typeof b === 'object'
+        ? { ...(b as Record<string, unknown>), cache_control: { type: 'ephemeral' } }
+        : b,
+    );
+    return { ...msg, content: blocks } as Msg;
+  }
+  return msg;
+}
+
+/**
+ * Returns a copy of the conversation with a rolling cache breakpoint on the most
+ * recent message. Anthropic matches the longest previously-cached prefix, so each
+ * turn reads everything written on the prior turn — turning a growing history into
+ * cheap cache reads instead of fresh input tokens (the fix for rate limits on long
+ * tasks). System and tools carry their own breakpoints, so this stays within the
+ * 4-breakpoint limit.
+ */
+function applyAnthropicCaching(messages: Msg[]): Msg[] {
+  const last = messages[messages.length - 1];
+  if (!last) return messages;
+  const out = [...messages];
+  out[out.length - 1] = withCacheBreakpoint(last);
+  return out;
 }
 
 async function streamAnthropic(
@@ -249,6 +289,8 @@ async function streamAnthropic(
   const systemContent = cfg.enablePromptCache
     ? [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }]
     : system;
+  // Cache the conversation prefix so each turn reads (not re-bills) prior context.
+  const outgoing = cfg.enablePromptCache ? applyAnthropicCaching(messages) : messages;
 
   const stepSignal = mergeSignals(signal, AbortSignal.timeout(cfg.stepTimeoutMs));
   const res = await fetchWithRetry(
@@ -268,7 +310,7 @@ async function streamAnthropic(
         temperature: cfg.temperature,
         ...(cfg.topK > 0 ? { top_k: cfg.topK } : {}),
         system: systemContent,
-        messages,
+        messages: outgoing,
         tools,
         stream: true,
       }),
@@ -554,7 +596,7 @@ export async function runAgentLoop(
   const isOllama = cfg.provider === 'ollama';
   const isGemini = cfg.provider === 'gemini';
 
-  const anthropicTools = buildAnthropicTools(toolSchemas);
+  const anthropicTools = buildAnthropicTools(toolSchemas, cfg.enablePromptCache);
   const openaiTools = buildOpenAITools(toolSchemas);
 
   const messages: Msg[] = [...initialMessages];
@@ -577,26 +619,41 @@ export async function runAgentLoop(
       messages.splice(0, messages.length, ...trimmed);
     }
 
-    // Stream one LLM turn
-    let turn: TurnResult;
-    try {
-      if (isAnthropic) {
-        turn = await streamAnthropic(cfg, system, messages, anthropicTools, emit, signal);
-      } else if (isOllama) {
-        turn = await callOllama(cfg, system, messages, emit, signal);
-      } else if (isGemini) {
-        turn = await callGemini(cfg, system, messages, emit, signal);
-      } else {
-        turn = await streamOpenAI(cfg, system, messages, openaiTools, emit, signal);
+    // Stream one LLM turn — retry rate-limit / transient errors with backoff.
+    // Some providers return HTTP 200 then stream an error event (e.g. code 1300 /
+    // raw_status_code 429), which fetchWithRetry can't catch, so we retry here.
+    let turn!: TurnResult;
+    const MAX_TURN_RETRIES = 6;
+    for (let turnAttempt = 0; ; turnAttempt++) {
+      try {
+        if (isAnthropic) {
+          turn = await streamAnthropic(cfg, system, messages, anthropicTools, emit, signal);
+        } else if (isOllama) {
+          turn = await callOllama(cfg, system, messages, emit, signal);
+        } else if (isGemini) {
+          turn = await callGemini(cfg, system, messages, emit, signal);
+        } else {
+          turn = await streamOpenAI(cfg, system, messages, openaiTools, emit, signal);
+        }
+        break;
+      } catch (e) {
+        if (signal.aborted) {
+          return { content: '', toolCalls: allToolCalls, stopReason: 'cancelled', tokens: totalTokens };
+        }
+        const msg = e instanceof Error ? e.message : String(e);
+        const retryAfterMatch = msg.match(/"retry_after"\s*:\s*(\d+)/);
+        const retryable = (e as { retryable?: boolean }).retryable ?? false;
+        if (retryable && turnAttempt < MAX_TURN_RETRIES) {
+          const delay = retryAfterMatch
+            ? Math.min(parseInt(retryAfterMatch[1]!, 10) * 1000, 60_000)
+            : Math.min(2000 * Math.pow(2, turnAttempt) + Math.random() * 500, 60_000);
+          emit({ type: 'info', message: `Rate limited — retrying in ${Math.round(delay / 1000)}s… (attempt ${turnAttempt + 1}/${MAX_TURN_RETRIES})` });
+          await new Promise(r => setTimeout(r, delay));
+          continue;
+        }
+        emit({ type: 'error', message: retryable ? `Rate limit exceeded after ${MAX_TURN_RETRIES} retries. Wait a moment and try again.` : msg, retryable });
+        throw e;
       }
-    } catch (e) {
-      if (signal.aborted) {
-        return { content: '', toolCalls: allToolCalls, stopReason: 'cancelled', tokens: totalTokens };
-      }
-      const msg = e instanceof Error ? e.message : String(e);
-      const retryable = (e as { retryable?: boolean }).retryable ?? false;
-      emit({ type: 'error', message: msg, retryable });
-      throw e;
     }
 
     // Accumulate token usage

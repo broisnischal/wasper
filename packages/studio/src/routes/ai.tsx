@@ -400,6 +400,8 @@ function AiPage() {
   const abortRef = useRef<AbortController | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
+  // Whether the user is parked at the bottom — only then do we auto-follow streaming.
+  const pinnedRef = useRef(true);
 
   useEffect(() => {
     getAllChats().then(chats => {
@@ -412,9 +414,22 @@ function AiPage() {
     }).catch(() => {});
   }, []);
 
+  // While streaming, keep the viewport glued to the bottom with an instant jump
+  // (no competing smooth-scroll animations — that was the source of the jank).
+  // Only follow if the user hasn't scrolled up to read.
   useEffect(() => {
+    if (!pinnedRef.current) return;
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const id = requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
+    return () => cancelAnimationFrame(id);
+  }, [streamingContent, liveToolCalls.length]);
+
+  // A committed message (send / assistant turn done) gets one smooth scroll.
+  useEffect(() => {
+    pinnedRef.current = true;
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, liveToolCalls.length, streamingContent]);
+  }, [messages.length]);
 
   // Focus composer when '/' is pressed globally (and no other input is focused)
   useEffect(() => {
@@ -446,7 +461,9 @@ function AiPage() {
   const handleScroll = () => {
     const el = scrollContainerRef.current;
     if (!el) return;
-    setShowScrollBtn(el.scrollHeight - el.scrollTop - el.clientHeight > 120);
+    const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
+    pinnedRef.current = dist < 80;
+    setShowScrollBtn(dist > 120);
   };
 
   const startNewChat = () => {
@@ -699,7 +716,7 @@ function AiPage() {
       {showScrollBtn && (
         <div className="absolute bottom-[90px] right-5 z-10">
           <button
-            onClick={() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' })}
+            onClick={() => { pinnedRef.current = true; bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }}
             className="flex items-center justify-center w-8 h-8 rounded-full border border-[var(--border)] bg-[var(--card)] text-[var(--muted-foreground)] shadow-md hover:text-[var(--foreground)] hover:border-[var(--border-hover)] transition-colors"
             title="Scroll to bottom"
           >
