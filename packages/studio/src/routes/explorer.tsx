@@ -37,7 +37,7 @@ import {
   Bookmark, BookmarkPlus, Share2, Route as RouteIcon,
   FlaskConical, SlidersHorizontal, ShieldAlert, Terminal, Globe, Info,
   CheckCircle2, XCircle, Clock, RefreshCcw, MoreHorizontal,
-  Rows2, Columns2, ChevronsUpDown, PanelLeftClose, PanelLeftOpen, Sparkles,
+  Rows2, Columns2, ChevronsUpDown, FoldVertical, UnfoldVertical, PanelLeftClose, PanelLeftOpen, Sparkles,
 } from 'lucide-react';
 
 export const Route = createFileRoute('/explorer')({ component: ExplorerPage });
@@ -1518,54 +1518,60 @@ function ResponsePanel({ response, loading }: { response: ResponseResult | null;
         <div className="flex-1" />
 
         {/* Controls */}
-        <div className="flex items-center gap-0.5">
-          {view === 'body' && isJson && bodyMode === 'tree' && (
+        <div className="flex items-center gap-1">
+          {view === 'body' && isJson && (
             <>
-              <button className="btn btn-ghost btn-sm h-6 px-1.5 text-[10.5px] gap-1" onClick={() => treeControls.current?.expandAll()} title="Expand all">
-                <ChevronsUpDown size={10} />all
-              </button>
-              <button className="btn btn-ghost btn-sm h-6 px-1.5 text-[10.5px]" onClick={() => treeControls.current?.collapseAll()} title="Collapse all">
-                <ChevronsUpDown size={10} />
-              </button>
+              {/* View mode — segmented */}
+              <div className="flex items-center rounded-md bg-muted/60 p-0.5">
+                <button
+                  className={cn('flex size-6 items-center justify-center rounded-[5px] transition-colors',
+                    bodyMode === 'tree' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground')}
+                  onClick={() => setBodyMode('tree')} title="Tree view"
+                ><Braces size={11} /></button>
+                <button
+                  className={cn('flex size-6 items-center justify-center rounded-[5px] transition-colors',
+                    bodyMode === 'pretty' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground')}
+                  onClick={() => setBodyMode('pretty')} title="Raw text"
+                ><AlignLeft size={11} /></button>
+              </div>
+
+              {bodyMode === 'tree' && (
+                <>
+                  <Tooltip><TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon-xs" onClick={() => treeControls.current?.expandAll()}><UnfoldVertical /></Button>
+                  </TooltipTrigger><TooltipContent>Expand all</TooltipContent></Tooltip>
+                  <Tooltip><TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon-xs" onClick={() => treeControls.current?.collapseAll()}><FoldVertical /></Button>
+                  </TooltipTrigger><TooltipContent>Collapse all</TooltipContent></Tooltip>
+                </>
+              )}
+
+              <Tooltip><TooltipTrigger asChild>
+                <Button
+                  variant="ghost" size="icon-xs"
+                  className={cn(filterOpen && 'bg-muted text-foreground', !filterOpen && filter && 'text-brand')}
+                  onClick={() => setFilterOpen(v => !v)}
+                ><Search /></Button>
+              </TooltipTrigger><TooltipContent>{filterOpen ? 'Hide filter' : 'Filter · jq'}</TooltipContent></Tooltip>
+
+              <div className="mx-0.5 h-4 w-px bg-border" />
             </>
           )}
-          {view === 'body' && isJson && (
-            <button
-              className={cn(
-                'btn btn-ghost btn-sm btn-icon h-6 w-6',
-                filterOpen && 'bg-[color-mix(in_srgb,var(--foreground)_10%,transparent)] text-[var(--foreground)]',
-                !filterOpen && filter ? 'text-[var(--primary)]' : '',
-              )}
-              onClick={() => setFilterOpen(v => !v)}
-              title={filterOpen ? 'Hide filter' : 'Filter / jq'}
-            >
-              <Search size={11} />
-            </button>
-          )}
-          {view === 'body' && isJson && (
-            <div className="flex items-center gap-0.5 pl-1 border-l border-[var(--border)] ml-0.5">
-              <button
-                className={cn('btn btn-ghost btn-sm btn-icon h-6 w-6', bodyMode === 'tree' && 'bg-[color-mix(in_srgb,var(--foreground)_10%,transparent)] text-[var(--foreground)]')}
-                onClick={() => setBodyMode('tree')} title="Tree view"
-              ><Braces size={10} /></button>
-              <button
-                className={cn('btn btn-ghost btn-sm btn-icon h-6 w-6', bodyMode === 'pretty' && 'bg-[color-mix(in_srgb,var(--foreground)_10%,transparent)] text-[var(--foreground)]')}
-                onClick={() => setBodyMode('pretty')} title="Pretty text"
-              ><AlignLeft size={10} /></button>
-            </div>
-          )}
-          <div className="w-px h-4 bg-[var(--border)] mx-0.5" />
-          <button className="btn btn-ghost btn-sm btn-icon h-6 w-6" onClick={() => copy(filter.trim() && isJson ? filteredText : response.body, 'body')} title="Copy body">
-            {copied === 'body' ? <Check size={11} className="text-[var(--primary)]" /> : <Copy size={11} />}
-          </button>
-          <a
-            href={isBinary
-              ? `data:${contentType.split(';')[0] || 'application/octet-stream'};base64,${response.bodyB64}`
-              : `data:text/plain;charset=utf-8,${encodeURIComponent(response.body)}`}
-            download={isBinary ? 'response' : (isJson ? 'response.json' : 'response.txt')}
-            className="btn btn-ghost btn-sm btn-icon h-6 w-6" title="Download">
-            <Download size={11} />
-          </a>
+          <Tooltip><TooltipTrigger asChild>
+            <Button variant="ghost" size="icon-xs" onClick={() => copy(filter.trim() && isJson ? filteredText : response.body, 'body')}>
+              {copied === 'body' ? <Check className="text-brand" /> : <Copy />}
+            </Button>
+          </TooltipTrigger><TooltipContent>Copy body</TooltipContent></Tooltip>
+          <Tooltip><TooltipTrigger asChild>
+            <Button asChild variant="ghost" size="icon-xs">
+              <a
+                href={isBinary
+                  ? `data:${contentType.split(';')[0] || 'application/octet-stream'};base64,${response.bodyB64}`
+                  : `data:text/plain;charset=utf-8,${encodeURIComponent(response.body)}`}
+                download={isBinary ? 'response' : (isJson ? 'response.json' : 'response.txt')}
+              ><Download /></a>
+            </Button>
+          </TooltipTrigger><TooltipContent>Download</TooltipContent></Tooltip>
         </div>
       </div>
 

@@ -54,23 +54,33 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
 
   useEffect(() => { setShowPlaceholder(!value); }, [value]);
 
-  // Bind / unbind the JSON schema to this editor's model.
-  useEffect(() => {
-    if (!ready || language !== 'json') return;
-    let uri: string | null = null;
-    let cancelled = false;
+  // Keep the latest schema in a ref so binding works regardless of mount timing.
+  const schemaRef = useRef(schema);
+  schemaRef.current = schema;
+  const boundUri = useRef<string | null>(null);
+
+  // Bind the JSON schema to this editor's model — works whether the model is
+  // ready before or after this runs, since handleMount calls it too.
+  const bindSchema = React.useCallback(() => {
+    if (language !== 'json') return;
+    const uri = editorRef.current?.getModel()?.uri.toString() ?? null;
+    if (!uri) return;
+    boundUri.current = uri;
+    const s = schemaRef.current;
     import('../lib/monaco').then(m => {
-      if (cancelled) return;
-      uri = editorRef.current?.getModel()?.uri.toString() ?? null;
-      if (!uri) return;
-      if (schema && Object.keys(schema).length) m.registerJsonSchema(uri, schema);
+      if (s && Object.keys(s).length) m.registerJsonSchema(uri, s);
       else m.unregisterJsonSchema(uri);
     });
-    return () => {
-      cancelled = true;
-      if (uri) import('../lib/monaco').then(m => m.unregisterJsonSchema(uri!));
-    };
-  }, [ready, schema, language]);
+  }, [language]);
+
+  useEffect(() => {
+    if (ready) bindSchema();
+  }, [ready, schema, bindSchema]);
+
+  // Drop the schema binding when the editor unmounts.
+  useEffect(() => () => {
+    if (boundUri.current) import('../lib/monaco').then(m => m.unregisterJsonSchema(boundUri.current!));
+  }, []);
 
   React.useImperativeHandle(ref, () => ({
     format: () => {
@@ -80,6 +90,7 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
 
   const handleMount: OnMount = (editor) => {
     editorRef.current = editor;
+    bindSchema();
   };
 
   const handleChange: OnChange = (v) => {
