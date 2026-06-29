@@ -12,6 +12,9 @@ import { CodeEditor, type CodeEditorHandle } from '../components/CodeEditor';
 import { COMMON_HEADERS, HEADER_VALUE_SUGGESTIONS, RAW_BODY_TYPES, jqFilter, generateJsonSchema } from '../lib/http';
 import type { CodeRequest } from '../lib/codegen';
 import { cn } from '../lib/utils';
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from '../components/ui/empty';
+import { Button } from '../components/ui/button';
+import { Tooltip, TooltipTrigger, TooltipContent } from '../components/ui/tooltip';
 import { useApp } from '../context';
 import { resolveVars, setSpecVars, type Environment } from '../lib/env';
 import {
@@ -1306,11 +1309,15 @@ function ResponsePanel({ response, loading }: { response: ResponseResult | null;
   );
 
   if (!response) return (
-    <div className="empty-state">
-      <Send size={26} className="opacity-40" />
-      <div className="text-[13px] font-medium">Send a request to see the response</div>
-      <div className="text-[12px] text-[var(--placeholder-foreground)]">Press Mod+Enter or click Send</div>
-    </div>
+    <Empty className="flex-1">
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <Send />
+        </EmptyMedia>
+        <EmptyTitle>Send a request to see the response</EmptyTitle>
+        <EmptyDescription>Press Mod+Enter or click Send</EmptyDescription>
+      </EmptyHeader>
+    </Empty>
   );
 
   if (response.error) return (
@@ -2714,14 +2721,14 @@ function ExplorerPage() {
                 style={{
                   height: 34,
                   maxWidth: tab.interceptRuleId ? 140 : 90,
-                  borderColor: tab.interceptRuleId ? 'var(--accent, #6366f1)' : 'var(--border)',
-                  background: tab.interceptRuleId ? 'color-mix(in srgb,var(--accent,#6366f1) 8%,transparent)' : 'var(--input-bg)',
+                  borderColor: tab.interceptRuleId ? 'var(--brand)' : 'var(--border)',
+                  background: tab.interceptRuleId ? 'color-mix(in srgb,var(--brand) 8%,transparent)' : 'var(--input-bg)',
                 }}
               >
-                <RouteIcon size={10} style={{ color: tab.interceptRuleId ? 'var(--accent, #6366f1)' : 'var(--placeholder-foreground)', flexShrink: 0 }} />
+                <RouteIcon size={10} style={{ color: tab.interceptRuleId ? 'var(--brand)' : 'var(--placeholder-foreground)', flexShrink: 0 }} />
                 <select
                   className="bg-transparent border-0 outline-none cursor-pointer font-sans text-[11px] min-w-0 truncate"
-                  style={{ color: tab.interceptRuleId ? 'var(--accent, #6366f1)' : 'var(--placeholder-foreground)', maxWidth: '100%' }}
+                  style={{ color: tab.interceptRuleId ? 'var(--brand)' : 'var(--placeholder-foreground)', maxWidth: '100%' }}
                   value={tab.interceptRuleId ?? ''}
                   onChange={e => upd(tab.id, { interceptRuleId: e.target.value || undefined })}
                   title="Route request via an intercept rule"
@@ -2734,34 +2741,30 @@ function ExplorerPage() {
               </div>
             )}
             {/* Send button */}
-            <button
+            <Button
               onClick={send}
               disabled={tab.loading || !tab.url}
-              style={{
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                gap: 6, height: 36, padding: '0 18px', borderRadius: 8,
-                fontSize: 13, fontWeight: 600, letterSpacing: '-0.01em',
-                background: 'var(--primary)',
-                color: 'var(--primary-foreground)',
-                border: '1px solid var(--primary)',
-                cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap',
-                fontFamily: 'inherit', userSelect: 'none',
-                transition: 'opacity 0.12s', opacity: !tab.url ? 0.4 : 1,
-                pointerEvents: !tab.url ? 'none' : 'auto',
-              }}
+              size="lg"
+              className="h-9 flex-shrink-0 rounded-lg px-4 text-[13px] font-semibold"
             >
               {tab.loading
-                ? <><span className="spinner" style={{ width: 11, height: 11 }} /> Sending…</>
-                : <><Send size={12} /> Send</>}
-            </button>
+                ? <><span className="spinner size-3" /> Sending…</>
+                : <><Send data-icon="inline-start" /> Send</>}
+            </Button>
             {/* Ask AI */}
-            <button
-              title="Ask AI (contextual)"
-              onClick={() => window.dispatchEvent(new CustomEvent('open-ai-panel'))}
-              className="flex items-center justify-center w-[36px] h-[36px] rounded-md border border-[var(--border)] bg-transparent text-[var(--accent)] hover:bg-[color-mix(in_srgb,var(--accent)_8%,transparent)] hover:border-[color-mix(in_srgb,var(--accent)_40%,transparent)] flex-shrink-0 transition-colors cursor-pointer"
-            >
-              <Sparkles size={13} />
-            </button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="size-9 flex-shrink-0 rounded-lg text-brand hover:text-brand"
+                  onClick={() => window.dispatchEvent(new CustomEvent('open-ai-panel'))}
+                >
+                  <Sparkles />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Ask AI (contextual)</TooltipContent>
+            </Tooltip>
             {/* ⋯ More actions */}
             <div className="relative flex-shrink-0">
               <button
@@ -2937,7 +2940,7 @@ function ExplorerPage() {
                 {tab.interceptRuleId && interceptRules.find(r => r.id === tab.interceptRuleId) && (
                   <>
                     <span className="text-[10px] text-[var(--placeholder-foreground)]">via</span>
-                    <span className="text-[10.5px] font-medium truncate max-w-[100px]" style={{ color: 'var(--accent, #6366f1)' }}>
+                    <span className="text-[10.5px] font-medium truncate max-w-[100px]" style={{ color: 'var(--brand)' }}>
                       {interceptRules.find(r => r.id === tab.interceptRuleId)!.name}
                     </span>
                   </>
