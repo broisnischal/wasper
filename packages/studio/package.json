@@ -8,7 +8,7 @@
   "scripts": {
     "dev": "vite dev --port 3000",
     "generate-routes": "tsr generate",
-    "build": "vite build && bun scripts/build-sw.mjs",
+    "build": "vite build && bun scripts/build-sw.mjs && bun scripts/prune-server.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "deploy": "bun run build && bunx wrangler deploy --config dist/server/wrangler.json"
