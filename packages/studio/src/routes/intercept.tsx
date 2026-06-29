@@ -184,7 +184,7 @@ function RuleCard({ rule, onEdit, onDelete, onToggle }: {
       !enabled && 'opacity-50',
     )}>
       <div className="flex items-center gap-3 px-4 py-3">
-        <Switch checked={enabled} onChange={onToggle} aria-label="Enable rule" />
+        <Switch checked={enabled} onCheckedChange={onToggle} aria-label="Enable rule" />
 
         <span className="font-semibold text-[13.5px] text-[var(--foreground)] flex-1 min-w-0 truncate">
           {rule.name || <span className="text-[var(--muted-foreground)] italic font-normal">Unnamed rule</span>}

@@ -13,6 +13,8 @@ import {
   listEnvironments, getActiveEnvId, setActiveEnvId as persistActiveEnv,
   type Environment,
 } from '../lib/env';
+import { TooltipProvider } from '../components/ui/tooltip';
+import { Toaster } from '../components/ui/sonner';
 import appCss from '../styles.css?url';
 
 export const Route = createRootRoute({
@@ -526,12 +528,45 @@ function AppShell() {
 
   const toggleTheme = () => setTheme(t => t === 'dark' ? 'light' : 'dark');
 
-  // WebSocket drives connection state — no HTTP polling; WS open/close IS the health check
+  // Connection is gated on an HTTP health check, not the log WebSocket. A deployed
+  // (HTTPS) studio can reach the local daemon over HTTP (granted via Private Network
+  // Access) even when ws://localhost is blocked — so HTTP is the source of truth and
+  // the WebSocket is layered on top purely for live logs / server events.
   useEffect(() => {
     let dead = false;
-    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let wsRetry: ReturnType<typeof setTimeout> | null = null;
+    let httpRetry: ReturnType<typeof setTimeout> | null = null;
+    let loaded = false;
 
-    const connect = () => {
+    const loadOnce = () => {
+      if (loaded) return;
+      loaded = true;
+      apiClient<Features>('/api/features').then(setFeaturesState).catch(() => {});
+      apiClient<ParsedOp[]>('/api/spec/endpoints').then(setOperations).catch(() => {});
+      // Notify pages that may hold stale status (OverviewPage, ExplorerPage)
+      window.dispatchEvent(new CustomEvent('cli-spec-changed'));
+    };
+
+    const wsOpen = () => wsRef.current?.readyState === WebSocket.OPEN;
+
+    const httpProbe = async () => {
+      if (dead) return;
+      try {
+        const res = await fetch(`${getCliUrl()}/api/features`, { headers: authHeaders(), cache: 'no-store' });
+        if (!res.ok) throw new Error(String(res.status));
+        if (dead) return;
+        setConnected(true);
+        loadOnce();
+      } catch {
+        if (dead || wsOpen()) return; // WS may still be carrying the connection
+        setConnected(false);
+      } finally {
+        // Poll only while the WS isn't providing liveness; once it's open we lean on it.
+        if (!dead && !wsOpen()) httpRetry = setTimeout(httpProbe, 4000);
+      }
+    };
+
+    const connectWs = () => {
       if (dead) return;
       const ws = new WebSocket(LOG_WS_URL);
       wsRef.current = ws;
@@ -540,17 +575,17 @@ function AppShell() {
         if (dead) return;
         setConnected(true);
         setWsConnected(true);
-        apiClient<Features>('/api/features').then(setFeaturesState).catch(() => {});
-        apiClient<ParsedOp[]>('/api/spec/endpoints').then(setOperations).catch(() => {});
-        // Notify pages that may hold stale status (OverviewPage, ExplorerPage)
+        if (httpRetry) { clearTimeout(httpRetry); httpRetry = null; } // WS is live; stop polling
+        loadOnce();
         window.dispatchEvent(new CustomEvent('cli-spec-changed'));
       };
 
       ws.onclose = () => {
         if (dead) return;
-        setConnected(false);
         setWsConnected(false);
-        retryTimer = setTimeout(connect, 3000);
+        wsRetry = setTimeout(connectWs, 3000);
+        // Re-check over HTTP so a blocked/dropped WS doesn't read as fully offline.
+        if (!httpRetry) httpProbe();
       };
 
       ws.onerror = () => ws.close();
@@ -575,10 +610,12 @@ function AppShell() {
       };
     };
 
-    connect();
+    httpProbe();
+    connectWs();
     return () => {
       dead = true;
-      if (retryTimer) clearTimeout(retryTimer);
+      if (wsRetry) clearTimeout(wsRetry);
+      if (httpRetry) clearTimeout(httpRetry);
       wsRef.current?.close();
       wsRef.current = null;
     };
@@ -674,14 +711,17 @@ function AppShell() {
       features, setFeatures: setFeaturesState,
       wsConnected,
     }}>
-      {HotkeysLayer ? (
-        <HotkeysLayer
-          onHelpToggle={() => setHelpOpen(v => !v)}
-          onHelpClose={() => setHelpOpen(false)}
-        >
-          {main}
-        </HotkeysLayer>
-      ) : main}
+      <TooltipProvider delayDuration={300}>
+        {HotkeysLayer ? (
+          <HotkeysLayer
+            onHelpToggle={() => setHelpOpen(v => !v)}
+            onHelpClose={() => setHelpOpen(false)}
+          >
+            {main}
+          </HotkeysLayer>
+        ) : main}
+        <Toaster position="bottom-right" />
+      </TooltipProvider>
     </AppContext.Provider>
   );
 }
