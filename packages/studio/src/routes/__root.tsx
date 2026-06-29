@@ -6,8 +6,8 @@ import { HotkeyHelp } from '../components/HotkeyHelp';
 import { AiPanel } from '../components/AiPanel';
 import { DecoderPanel } from '../components/DecoderPanel';
 import { AppContext, DEFAULT_FEATURES, type Features, useApp } from '../context';
-import { Sun, Moon } from 'lucide-react';
-import { apiClient, getCliUrl, setCliUrl, clearCliUrl, getCliToken, setCliToken, clearCliToken, LOG_WS_URL } from '../lib/api';
+import { Sun, Moon, RefreshCw, Loader2, ShieldCheck, AlertCircle } from 'lucide-react';
+import { apiClient, getCliUrl, setCliUrl, clearCliUrl, getCliToken, setCliToken, clearCliToken, authHeaders, LOG_WS_URL } from '../lib/api';
 import { injectFonts } from '../fonts';
 import {
   listEnvironments, getActiveEnvId, setActiveEnvId as persistActiveEnv,
@@ -29,7 +29,7 @@ export const Route = createRootRoute({
 
 function RootDocument({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" data-theme="dark">
+    <html lang="en" data-theme="dark" className="dark">
       <head>
         <HeadContent />
         {/* Prevent theme flash before React hydrates */}
@@ -37,6 +37,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
           try {
             var t = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
             document.documentElement.setAttribute('data-theme', t);
+            document.documentElement.classList.toggle('dark', t === 'dark');
           } catch(e) {}
         ` }} />
       </head>
@@ -173,11 +174,38 @@ function OfflineCard() {
   const [tokenInput, setTokenInput] = useState(getCliToken() ?? '');
   const [showConnect, setShowConnect] = useState(currentUrl !== 'http://localhost:3388');
   const [installTab, setInstallTab] = useState<InstallTab>('curl');
+  const [probing, setProbing] = useState(false);
+  const [probeErr, setProbeErr] = useState<string | null>(null);
   const isUnsafeMix = typeof window !== 'undefined'
     && window.location.protocol === 'https:'
     && urlInput.startsWith('http:')
     && !urlInput.startsWith('http://localhost')
     && !urlInput.startsWith('http://127.0.0.1');
+
+  // A deployed (HTTPS) studio reaching a daemon on the user's machine.
+  const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
+  const targetsLocal = /\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/.test(currentUrl);
+
+  // Explicit, user-gesture connection attempt. Crucially this is what triggers the
+  // browser's Local Network Access permission prompt — the background WebSocket
+  // retry can't, so a denied/unprompted user only ever sees "offline" without it.
+  const tryConnect = async () => {
+    setProbing(true);
+    setProbeErr(null);
+    try {
+      const res = await fetch(`${getCliUrl()}/api/features`, { headers: authHeaders(), cache: 'no-store' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      window.location.reload();
+    } catch {
+      setProbeErr(
+        isHttps && targetsLocal
+          ? 'Still can’t reach it. Make sure wasper is running locally, then choose “Allow” if your browser asks to access your local network.'
+          : 'Could not reach the daemon at that URL. Make sure it’s running and reachable.',
+      );
+    } finally {
+      setProbing(false);
+    }
+  };
 
   const save = () => { setCliUrl(urlInput); setCliToken(tokenInput.trim()); window.location.reload(); };
   const reset = () => { clearCliUrl(); clearCliToken(); window.location.reload(); };
@@ -235,18 +263,68 @@ function OfflineCard() {
             Get started with Wasper Studio
           </h1>
           <p style={{ marginTop: 8, fontSize: 14, color: 'var(--muted-foreground)', lineHeight: 1.6, margin: '8px 0 0' }}>
-            Follow the steps below to connect the studio to your OpenAPI spec.
+            The studio runs your requests through a small daemon on your own machine. Connect to it to get started.
           </p>
-          <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--muted-foreground)' }}>
-            Connecting to{' '}
-            <code style={{
-              fontFamily: 'monospace', fontSize: 12,
-              background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
-              borderRadius: 5, padding: '2px 7px', color: 'rgba(255,255,255,0.8)',
-            }}>
-              {currentUrl}
-            </code>
-            <span className="connecting-dots"><span /><span /><span /></span>
+
+          {/* ── Connect hero: primary action + local-network permission prompt ── */}
+          <div style={{
+            marginTop: 22, padding: 18, borderRadius: 14,
+            border: '1px solid color-mix(in srgb, var(--foreground) 12%, transparent)',
+            background: 'color-mix(in srgb, var(--foreground) 3.5%, transparent)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 12 }}>
+              <span style={{
+                width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+                background: 'var(--warning)', animation: 'pulse 1.6s ease-in-out infinite',
+              }} />
+              <span style={{ fontSize: 13, color: 'var(--muted-foreground)' }}>
+                Waiting for{' '}
+                <code style={{
+                  fontFamily: 'monospace', fontSize: 12,
+                  background: 'color-mix(in srgb, var(--foreground) 7%, transparent)',
+                  border: '1px solid color-mix(in srgb, var(--foreground) 12%, transparent)',
+                  borderRadius: 5, padding: '2px 7px', color: 'var(--foreground)',
+                }}>
+                  {currentUrl}
+                </code>
+              </span>
+            </div>
+
+            {isHttps && targetsLocal && (
+              <p style={{
+                display: 'flex', gap: 8, alignItems: 'flex-start',
+                fontSize: 12.5, color: 'var(--muted-foreground)', lineHeight: 1.55, margin: '0 0 14px',
+              }}>
+                <ShieldCheck size={15} style={{ flexShrink: 0, marginTop: 1, color: 'var(--accent)' }} />
+                <span>
+                  Your requests stay on your computer — nothing is sent to this site. Your browser may ask to{' '}
+                  <strong style={{ color: 'var(--foreground)' }}>access your local network</strong>; choose{' '}
+                  <strong style={{ color: 'var(--foreground)' }}>Allow</strong> to connect.
+                </span>
+              </p>
+            )}
+
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button className="btn btn-primary" onClick={tryConnect} disabled={probing} style={{ gap: 7 }}>
+                {probing
+                  ? <Loader2 size={14} className="animate-spin" />
+                  : <RefreshCw size={14} />}
+                {probing ? 'Connecting…' : (isHttps && targetsLocal ? 'Allow & connect' : 'Retry connection')}
+              </button>
+              <button className="btn btn-ghost" onClick={() => setShowConnect(s => !s)} style={{ fontSize: 13 }}>
+                Use a different URL
+              </button>
+            </div>
+
+            {probeErr && (
+              <p style={{
+                display: 'flex', gap: 7, alignItems: 'flex-start',
+                marginTop: 12, marginBottom: 0, fontSize: 12.5, color: 'var(--warning)', lineHeight: 1.5,
+              }}>
+                <AlertCircle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+                <span>{probeErr}</span>
+              </p>
+            )}
           </div>
         </div>
 
@@ -442,6 +520,7 @@ function AppShell() {
   // Apply theme to <html>
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
+    document.documentElement.classList.toggle('dark', theme === 'dark');
     localStorage.setItem('theme', theme);
   }, [theme]);
 
